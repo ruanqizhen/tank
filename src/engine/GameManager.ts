@@ -11,6 +11,7 @@ import { Tank } from '../entities/Tank';
 import { EnemyTank } from '../entities/EnemyTank';
 import { Bullet } from '../entities/Bullet';
 import { LEVELS } from '../world/levels';
+import { TankGrade } from '../types';
 
 export enum GameState {
     BOOT,
@@ -45,6 +46,8 @@ export class GameManager {
 
     private confirmReleased: boolean = true;
     private pauseReleased: boolean = true;
+    private savedPlayerGrade: TankGrade = TankGrade.BASIC;
+    private savedPlayerIsMax: boolean = false;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -170,8 +173,9 @@ export class GameManager {
     public schedulePlayerRespawn() { this.player.respawn(); }
 
     public resetGame() {
-        // currentStageIdx is 0-based
         this.currentStageIdx = 0;
+        this.savedPlayerGrade = TankGrade.BASIC;
+        this.savedPlayerIsMax = false;
         this.map = new MapTerrain();
 
         // Cycle maps after level 20, but difficulty keeps increasing/capping
@@ -272,6 +276,9 @@ export class GameManager {
                 break;
 
             case GameState.PAUSED:
+                if (!action.pause) {
+                    this.pauseReleased = true;
+                }
                 if (isPause) {
                     this.pauseReleased = false;
                     this.switchState(GameState.PLAYING);
@@ -296,6 +303,8 @@ export class GameManager {
                 break;
 
             case GameState.SCORE_TALLY:
+                this.savedPlayerGrade = this.player.grade;
+                this.savedPlayerIsMax = this.player.isMax;
                 this.currentStageIdx++;
 
                 const mapIdx = this.currentStageIdx % LEVELS.length;
@@ -308,8 +317,7 @@ export class GameManager {
                 this.spawnSystem.loadLevelConfig(nextDiff);
                 this.bullets = [];
                 this.enemies = [];
-                // Reset player position but preserve lives/grade
-                this.player.respawn();
+                this.player.respawnWithGrade(this.savedPlayerGrade, this.savedPlayerIsMax);
                 this.switchState(GameState.STAGE_INTRO);
                 break;
         }
@@ -553,17 +561,23 @@ export class GameManager {
         this.ctx.fillText('等级', 330, 26);
         this.ctx.fillStyle = '#00ff00';
         this.ctx.font = 'bold 14px "Orbitron", sans-serif';
-        const gradeText = this.player.isMax ? 'MAX' : this.player.grade.toString();
-        this.ctx.fillText(gradeText, 362, 26);
+        let gradeDisplay = '';
+        if (this.player.isMax) {
+            gradeDisplay = '⭐⭐⭐⭐';
+        } else {
+            const starCount = this.player.grade;
+            gradeDisplay = '⭐'.repeat(starCount);
+        }
+        this.ctx.fillText(gradeDisplay, 362, 26);
 
         // Enemy count (on-screen + not yet spawned)
         const enemiesLeft = this.enemies.length + this.spawnSystem.getRemainingToSpawn();
         this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
         this.ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
-        this.ctx.fillText('敌军', 420, 26);
+        this.ctx.fillText('敌军', 445, 26);
         this.ctx.fillStyle = '#ffcc00';
         this.ctx.font = 'bold 14px "Orbitron", sans-serif';
-        this.ctx.fillText(`${enemiesLeft}`, 452, 26);
+        this.ctx.fillText(`${enemiesLeft}`, 477, 26);
 
         // Stage
         this.ctx.fillStyle = 'rgba(255,255,255,0.5)';

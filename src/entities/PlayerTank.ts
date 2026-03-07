@@ -49,12 +49,30 @@ export class PlayerTank extends Tank {
         this.updateStats();
 
         this.hasShield = true;
-        this.shieldTimer = 180; // 3 seconds at 60fps
+        this.shieldTimer = 180;
+        this.isDead = false;
+    }
+
+    public respawnWithGrade(grade: TankGrade, isMax: boolean) {
+        const spawnPos = this.gameManager.getMap().getPlayerSpawn();
+        this.x = spawnPos.c * CELL_SIZE;
+        this.y = spawnPos.r * CELL_SIZE;
+        this.direction = Direction.UP;
+        this.grade = grade;
+        this.isMax = isMax;
+        this.updateStats();
+
+        this.hasShield = true;
+        this.shieldTimer = 180;
         this.isDead = false;
     }
 
     public applyDamage() {
-        if (this.hasShield) return;
+        if (this.hasShield) {
+            this.hasShield = false;
+            this.shieldTimer = 0;
+            return;
+        }
 
         if (this.isMax) {
             this.grade = TankGrade.POWER;
@@ -90,14 +108,18 @@ export class PlayerTank extends Tank {
 
     public upgrade(newGrade: TankGrade) {
         this.grade = newGrade;
+        if (newGrade === TankGrade.ARMOR) {
+            this.isMax = true;
+        }
         this.updateStats();
     }
 
     private updateStats() {
-        this.speed = this.isMax ? 2.5 : (this.grade === TankGrade.FAST ? 2.5 : 1.5);
-        this.bulletSpeed = this.isMax ? 8 : (this.grade === TankGrade.FAST ? 6 : 4);
-        this.maxBulletsOnScreen = this.isMax ? 2 : (this.grade >= TankGrade.POWER ? 2 : 1);
-        this.bulletPower = this.isMax ? 2 : (this.grade >= TankGrade.POWER ? 2 : 1);
+        const effectiveGrade = this.isMax ? TankGrade.ARMOR : this.grade;
+        this.speed = effectiveGrade === TankGrade.FAST ? 2.5 : 1.5;
+        this.bulletSpeed = effectiveGrade === TankGrade.FAST ? 6 : 4;
+        this.maxBulletsOnScreen = effectiveGrade >= TankGrade.POWER ? 2 : 1;
+        this.bulletPower = effectiveGrade >= TankGrade.POWER ? 2 : 1;
         this.shootCooldown = this.isMax ? 12 : 20;
     }
 

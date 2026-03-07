@@ -60,7 +60,7 @@ function generateLevelConfig(stage: number, mapStr: string): LevelConfig {
     const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
     // ── progress ratio 0..1 across 20 stages ──
-    const t = clamp((stage - 1) / 19, 0, 1);
+    const t = clamp((stage - 1) / 35, 0, 1);
 
     // ── core scalars ──
     const totalEnemies = clamp(Math.round(5 + t * 25), 5, 30);

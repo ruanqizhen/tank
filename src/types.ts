@@ -17,6 +17,12 @@ export enum TankGrade {
     ARMOR = 4
 }
 
+export enum EnemyBehavior {
+    ATTACK = 1,
+    GUERRILLA = 2,
+    DEFENSE = 3
+}
+
 export interface AABB {
     x: number;
     y: number;

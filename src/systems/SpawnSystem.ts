@@ -1,6 +1,6 @@
 import { GameManager } from '../engine/GameManager';
 import { EnemyTank } from '../entities/EnemyTank';
-import { TankGrade } from '../types';
+import { TankGrade, EnemyBehavior } from '../types';
 
 export class SpawnSystem {
     private gameManager: GameManager;
@@ -73,18 +73,38 @@ export class SpawnSystem {
         const point = this.gameManager.getMap().getEnemySpawn(this.gameManager.getEntities());
 
         if (point) {
-            // Spawn!
             const grade = this.spawnQueue.pop() || TankGrade.BASIC;
             const isFlashing = this.flashingIndices.has(this.enemiesSpawned);
 
-            const enemy = new EnemyTank(this.gameManager, point.c, point.r, grade, isFlashing);
+            const behavior = this.assignBehavior(grade, this.enemiesSpawned);
+
+            const enemy = new EnemyTank(this.gameManager, point.c, point.r, grade, isFlashing, behavior);
             this.gameManager.addEntity(enemy);
 
             this.enemiesSpawned++;
             this.spawnTimer = this.spawnInterval;
         } else {
-            // if failed (e.g., no valid spot), will try next frame
-            this.spawnTimer = 10; // short retry delay
+            this.spawnTimer = 10;
         }
+    }
+
+    private assignBehavior(grade: TankGrade, spawnIndex: number): EnemyBehavior {
+        const rand = Math.random();
+        
+        if (grade === TankGrade.ARMOR || grade === TankGrade.POWER) {
+            if (rand < 0.5) return EnemyBehavior.ATTACK;
+            if (rand < 0.75) return EnemyBehavior.DEFENSE;
+            return EnemyBehavior.GUERRILLA;
+        }
+        
+        if (grade === TankGrade.FAST) {
+            if (rand < 0.4) return EnemyBehavior.GUERRILLA;
+            if (rand < 0.7) return EnemyBehavior.ATTACK;
+            return EnemyBehavior.DEFENSE;
+        }
+        
+        if (spawnIndex % 4 === 0) return EnemyBehavior.DEFENSE;
+        if (spawnIndex % 3 === 0) return EnemyBehavior.GUERRILLA;
+        return EnemyBehavior.ATTACK;
     }
 }

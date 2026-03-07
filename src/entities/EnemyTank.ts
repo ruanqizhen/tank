@@ -1,10 +1,11 @@
 import { Tank } from './Tank';
-import { TankGrade, TankFaction, Direction } from '../types';
+import { TankGrade, TankFaction, Direction, EnemyBehavior } from '../types';
 import { GameManager } from '../engine/GameManager';
 import { CELL_SIZE } from '../constants';
+import { AStarPathfinder } from '../systems/AStarPathfinder';
 
 export class EnemyTank extends Tank {
-    private spawnTimer: number = 60; // 60 frames flashing spawn animation
+    private spawnTimer: number = 60;
     public hasSpawned: boolean = false;
 
     // AI State
@@ -15,19 +16,36 @@ export class EnemyTank extends Tank {
     private positionQuietFrames: number = 0;
 
     public holdsPowerUp: boolean = false;
-    private flashTimer: number = 0; // for hit flashing or powerup flashing
+    private flashTimer: number = 0;
     private hitFlashActive: boolean = false;
 
-    constructor(gameManager: GameManager, x: number, y: number, grade: TankGrade, holdsPowerUp: boolean = false) {
+    // Advanced AI
+    public behavior: EnemyBehavior = EnemyBehavior.ATTACK;
+    private pathfinder: AStarPathfinder | null = null;
+    private currentPath: Direction[] = [];
+    private pathRefreshTimer: number = 0;
+    private patrolPoints: { col: number; row: number }[] = [];
+    private currentPatrolIndex: number = 0;
+    private defenseHome: { col: number; row: number } | null = null;
+
+    constructor(gameManager: GameManager, x: number, y: number, grade: TankGrade, holdsPowerUp: boolean = false, behavior: EnemyBehavior = EnemyBehavior.ATTACK) {
         super(gameManager);
         this.x = x * CELL_SIZE;
         this.y = y * CELL_SIZE;
         this.lastX = this.x;
         this.lastY = this.y;
-        this.direction = Direction.DOWN; // Enemies spawn facing down
+        this.direction = Direction.DOWN;
         this.faction = TankFaction.ENEMY;
         this.grade = grade;
         this.holdsPowerUp = holdsPowerUp;
+        this.behavior = behavior;
+
+        this.pathfinder = new AStarPathfinder(this.gameManager.getMap());
+
+        if (behavior === EnemyBehavior.DEFENSE) {
+            this.defenseHome = { col: Math.round(x), row: Math.round(y) };
+            this.initPatrolPoints();
+        }
 
         switch (grade) {
             case TankGrade.BASIC:
@@ -56,8 +74,18 @@ export class EnemyTank extends Tank {
                 break;
         }
 
-        // Initial setup for shoot cooldown (enemies shoot less frequently than players on average, adjust as needed)
         this.shootCooldown = 60;
+    }
+
+    private initPatrolPoints() {
+        const col = Math.round(this.x / CELL_SIZE);
+        const row = Math.round(this.y / CELL_SIZE);
+        this.patrolPoints = [
+            { col, row },
+            { col: Math.min(col + 4, 28), row },
+            { col: Math.min(col + 4, 28), row: Math.min(row + 4, 36) },
+            { col, row: Math.min(row + 4, 36) }
+        ];
     }
 
     public upgrade(newGrade: TankGrade) {
@@ -324,10 +352,116 @@ export class EnemyTank extends Tank {
         return Math.abs(dx) + Math.abs(dy) < range;
     }
 
+    private shouldUseAStar(): boolean {
+        return true;
+    }
+
+    private updatePath() {
+        if (!this.pathfinder) return;
+
+        this.pathRefreshTimer--;
+        if (this.pathRefreshTimer > 0 && this.currentPath.length > 0) return;
+
+        this.pathRefreshTimer = 30; // Always reset timer to prevent spamming
+
+        const startCol = Math.round(this.x / CELL_SIZE);
+        const startRow = Math.round(this.y / CELL_SIZE);
+
+        // Try base first (highest priority)
+        const basePath = this.pathfinder.findPathToBase(startCol, startRow);
+        if (basePath.length > 0) {
+            this.currentPath = basePath;
+            return;
+        }
+
+        let targetCol: number = 14, targetRow: number = 36;
+
+        switch (this.behavior) {
+            case EnemyBehavior.ATTACK:
+                const player = this.gameManager.getPlayer();
+                if (player && !player.isDead && this.isPlayerNearby(300)) {
+                    targetCol = Math.round(player.x / CELL_SIZE);
+                    targetRow = Math.round(player.y / CELL_SIZE);
+                } else {
+                    const baseCoords = this.gameManager.getMap().baseCoords;
+                    if (baseCoords.length > 0) {
+                        const target = baseCoords[0];
+                        targetCol = target.c;
+                        targetRow = target.r;
+                    }
+                }
+                break;
+
+            case EnemyBehavior.GUERRILLA:
+                const powerUps = this.gameManager.getPowerUpSystem().getPowerUps().filter(p => !p.isDead);
+                if (powerUps.length > 0) {
+                    const closest = powerUps[0];
+                    targetCol = Math.round(closest.x / CELL_SIZE);
+                    targetRow = Math.round(closest.y / CELL_SIZE);
+                } else {
+                    targetCol = Math.round(Math.random() * 28);
+                    targetRow = Math.round(Math.random() * 36);
+                }
+                break;
+
+            case EnemyBehavior.DEFENSE:
+                if (this.patrolPoints.length > 0) {
+                    const target = this.patrolPoints[this.currentPatrolIndex];
+                    const dist = Math.abs(this.x / CELL_SIZE - target.col) + Math.abs(this.y / CELL_SIZE - target.row);
+                    if (dist < 2) {
+                        this.currentPatrolIndex = (this.currentPatrolIndex + 1) % this.patrolPoints.length;
+                    }
+                    targetCol = target.col;
+                    targetRow = target.row;
+                } else {
+                    targetCol = this.defenseHome?.col ?? startCol;
+                    targetRow = this.defenseHome?.row ?? startRow;
+                }
+                break;
+        }
+
+        const newPath = this.pathfinder.findPath(startCol, startRow, targetCol, targetRow);
+        if (newPath.length > 0) {
+            this.currentPath = newPath;
+        }
+    }
+
+    private followPath(): boolean {
+        if (this.currentPath.length === 0) return false;
+
+        const nextDir = this.currentPath[0];
+        if (this.direction === nextDir) {
+            if (this.canMoveInDirection(nextDir)) {
+                this.currentPath.shift();
+                return true;
+            } else {
+                // If blocked by brick, shoot
+                if (this.isBrickAhead()) {
+                    this.shoot();
+                } else {
+                    // Impassable, clear path and let AI try something else
+                    this.currentPath = [];
+                }
+                return false;
+            }
+        } else if (this.isAlignedToGrid()) {
+            this.snapToGrid();
+            // Don't turn if blocked, just try to shoot or clear path
+            if (this.canMoveInDirection(nextDir)) {
+                this.direction = nextDir;
+                this.currentPath.shift();
+                this.stuckFrames = 0;
+            } else {
+                if (this.isBrickAhead()) this.shoot();
+                else this.currentPath = [];
+            }
+        }
+        return false;
+    }
+
     private updateAI() {
-        // ── Stuck Detection ──
         const distSq = (this.x - this.lastX) ** 2 + (this.y - this.lastY) ** 2;
-        if (distSq < 0.01) { // Practically stationary
+        if (distSq < 0.01) {
             this.positionQuietFrames++;
         } else {
             this.positionQuietFrames = 0;
@@ -335,7 +469,6 @@ export class EnemyTank extends Tank {
         this.lastX = this.x;
         this.lastY = this.y;
 
-        // If physically stuck or positionally stuck (30 frames = 0.5s)
         if (this.stuckFrames > 30 || this.positionQuietFrames > 30) {
             this.recoverFromStuck();
             return;
@@ -345,63 +478,73 @@ export class EnemyTank extends Tank {
         if (aligned) {
             this.snapToGrid();
         }
+
         const losDir = this.getLineOfSightDirection();
 
-        // ── Priority 1: Player in line of sight — shoot or turn to shoot ──
         if (losDir !== null) {
             if (this.direction === losDir) {
-                if (aligned) {
-                    this.shoot();
-                }
-            } else if (aligned) {
-                // Only turn if it's a passable 2-cell wide path
-                if (this.canMoveInDirection(losDir)) {
-                    this.snapToGrid();
-                    this.direction = losDir;
-                    this.stuckFrames = 0;
-                }
+                if (aligned) this.shoot();
+            } else if (aligned && this.canMoveInDirection(losDir)) {
+                this.snapToGrid();
+                this.direction = losDir;
+                this.stuckFrames = 0;
             }
         }
-        // ── Priority 2: Player nearby (~200px) — chase the player ──
-        else if (this.isPlayerNearby(200) && aligned) {
+
+        if (this.shouldUseAStar() && aligned) {
+            this.updatePath();
+
+            const passable = this.getPassableDirections();
+            const sideDirs = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
+
+            if (sideDirs.length > 0 && Math.random() < 0.3) {
+                const baseDir = this.getBaseDirection();
+                this.direction = this.pickBestDirection(sideDirs, baseDir);
+                this.currentPath = [];
+                this.stuckFrames = 0;
+            } else if (this.followPath()) {
+                this.stuckFrames = 0;
+            }
+        } else {
+            this.executeLegacyAI(aligned);
+        }
+
+        this.executeMovement();
+
+        if (aligned) {
+            this.handleShooting();
+        }
+    }
+
+    private executeLegacyAI(aligned: boolean) {
+        if (this.isPlayerNearby(200) && aligned) {
             const player = this.gameManager.getPlayer();
-            const chaseDir = this.getDirectionToward(
-                player.x + player.w / 2, player.y + player.h / 2
-            );
-            // Only chase in that direction if it's passable
-            if (this.canMoveInDirection(chaseDir)) {
-                if (this.direction !== chaseDir) {
-                    this.snapToGrid();
-                    this.direction = chaseDir;
-                    this.stuckFrames = 0;
-                }
+            const chaseDir = this.getDirectionToward(player.x + player.w / 2, player.y + player.h / 2);
+            if (this.canMoveInDirection(chaseDir) && this.direction !== chaseDir) {
+                this.snapToGrid();
+                this.direction = chaseDir;
+                this.stuckFrames = 0;
             }
-        }
-        // ── Priority 3: Power-up on map — go pick it up ──
-        else if (aligned && this.getPowerUpDirection() !== null) {
+        } else if (aligned && this.getPowerUpDirection() !== null) {
             const puDir = this.getPowerUpDirection()!;
             if (this.canMoveInDirection(puDir) && this.direction !== puDir) {
                 this.snapToGrid();
                 this.direction = puDir;
                 this.stuckFrames = 0;
             }
-        }
-        // ── Priority 4: Navigate toward the base with smart pathfinding ──
-        else if (aligned) {
+        } else if (aligned) {
             const canMoveFwd = this.canMoveInDirection(this.direction);
             const brickAhead = !canMoveFwd && this.isBrickAhead();
 
             if (canMoveFwd) {
-                // Path is clear — occasionally consider turning at junctions
                 this.randomTurnTimer--;
                 if (this.randomTurnTimer <= 0) {
-                    this.randomTurnTimer = 120 + Math.floor(Math.random() * 120);
-                    // Only turn if there's actually a side path available (real junction)
+                    this.randomTurnTimer = 60 + Math.floor(Math.random() * 60);
                     const passable = this.getPassableDirections();
                     const sideDirs = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
                     if (sideDirs.length > 0) {
-                        // 50% chance to take a side path at a junction, biased toward base
-                        if (Math.random() < 0.5) {
+                        const turnChance = 0.8;
+                        if (Math.random() < turnChance) {
                             const baseDir = this.getBaseDirection();
                             this.snapToGrid();
                             this.direction = this.pickBestDirection(sideDirs, baseDir);
@@ -410,9 +553,7 @@ export class EnemyTank extends Tank {
                     }
                 }
             } else if (brickAhead) {
-                // Brick wall ahead — shoot through it!
                 this.shoot();
-                // After a few frames of shooting, consider a side path
                 if (this.stuckFrames >= 8) {
                     const passable = this.getPassableDirections();
                     const sideDirs = passable.filter(d => d !== this.getOpposite(this.direction));
@@ -423,23 +564,19 @@ export class EnemyTank extends Tank {
                     }
                 }
             } else {
-                // Impassable obstacle (steel, water, map edge) — turn immediately
                 this.snapToGrid();
                 const passable = this.getPassableDirections();
-                // Strongly avoid U-turns: filter out the reverse direction
                 const noReverse = passable.filter(d => d !== this.getOpposite(this.direction));
                 const candidates = noReverse.length > 0 ? noReverse : passable;
 
                 if (candidates.length > 0) {
                     this.direction = this.pickBestDirection(candidates, this.getBaseDirection());
                 } else {
-                    // Absolutely no way out — U-turn as last resort
                     this.direction = this.getOpposite(this.direction);
                 }
                 this.stuckFrames = 0;
             }
 
-            // Long-term stuck detection: if stuck for too long, force a new direction
             if (this.stuckFrames >= 20) {
                 this.snapToGrid();
                 const passable = this.getPassableDirections();
@@ -452,11 +589,11 @@ export class EnemyTank extends Tank {
                 this.stuckFrames = 0;
             }
         }
+    }
 
-        // ── Movement execution ──
-        let dx = 0; let dy = 0;
+    private executeMovement() {
+        let dx = 0, dy = 0;
         let moveSpeed = this.speed;
-        // Apply speed boost from reverse Clock power-up
         if (this.gameManager.getPowerUpSystem().enemySpeedBoostTimer > 0) {
             moveSpeed *= 2;
         }
@@ -467,7 +604,6 @@ export class EnemyTank extends Tank {
 
         const res = this.gameManager.getCollisionSystem().resolveMovement(this, dx, dy);
 
-        // Track sticking
         if ((dx !== 0 && res.dx === 0) || (dy !== 0 && res.dy === 0)) {
             this.stuckFrames++;
         } else {
@@ -476,35 +612,55 @@ export class EnemyTank extends Tank {
 
         this.x += res.dx;
         this.y += res.dy;
+    }
 
-        // Shooting when no line of sight to player
-        if (aligned) {
-            // Check what's ahead in the facing direction
-            const map = this.gameManager.getMap();
-            const col = Math.floor((this.x + this.w / 2) / CELL_SIZE);
-            const row = Math.floor((this.y + this.h / 2) / CELL_SIZE);
-            let hasWallOrBaseAhead = false;
+    private handleShooting() {
+        const map = this.gameManager.getMap();
+        const col = Math.floor((this.x + this.w / 2) / CELL_SIZE);
+        const row = Math.floor((this.y + this.h / 2) / CELL_SIZE);
 
-            // Scan a few cells ahead for walls (1, 2) or base (6)
-            for (let step = 1; step <= 5; step++) {
-                let checkR = row, checkC = col;
-                if (this.direction === Direction.UP) checkR = row - step;
-                else if (this.direction === Direction.DOWN) checkR = row + step;
-                else if (this.direction === Direction.LEFT) checkC = col - step;
-                else if (this.direction === Direction.RIGHT) checkC = col + step;
+        let hasWallOrBaseAhead = false;
+        let hasTargetAhead = false;
 
-                const type = map.getTerrainType(checkR, checkC);
-                if (type === 1 || type === 2 || type === 6) {
-                    hasWallOrBaseAhead = true;
-                    break;
-                }
+        for (let step = 1; step <= 8; step++) {
+            let checkR = row, checkC = col;
+            if (this.direction === Direction.UP) checkR = row - step;
+            else if (this.direction === Direction.DOWN) checkR = row + step;
+            else if (this.direction === Direction.LEFT) checkC = col - step;
+            else if (this.direction === Direction.RIGHT) checkC = col + step;
+
+            const type = map.getTerrainType(checkR, checkC);
+            if (type === 1 || type === 2 || type === 6) {
+                hasWallOrBaseAhead = true;
+                break;
             }
+        }
 
-            // Shoot much more often if facing a wall/base, otherwise rarely
-            const shootChance = hasWallOrBaseAhead ? 0.08 : 0.015;
-            if (Math.random() < shootChance) {
-                this.shoot();
-            }
+        const player = this.gameManager.getPlayer();
+        if (player && !player.isDead) {
+            const pCol = Math.floor((player.x + player.w / 2) / CELL_SIZE);
+            const pRow = Math.floor((player.y + player.h / 2) / CELL_SIZE);
+
+            if (this.direction === Direction.UP && col === pCol && player.y < this.y) hasTargetAhead = true;
+            else if (this.direction === Direction.DOWN && col === pCol && player.y > this.y) hasTargetAhead = true;
+            else if (this.direction === Direction.LEFT && row === pRow && player.x < this.x) hasTargetAhead = true;
+            else if (this.direction === Direction.RIGHT && row === pRow && player.x > this.x) hasTargetAhead = true;
+        }
+
+        const baseCoords = map.baseCoords;
+        for (const base of baseCoords) {
+            if (this.direction === Direction.UP && (col === base.c || col === base.c + 1) && base.r < row) hasTargetAhead = true;
+            else if (this.direction === Direction.DOWN && (col === base.c || col === base.c + 1) && base.r > row) hasTargetAhead = true;
+            else if (this.direction === Direction.LEFT && (row === base.r || row === base.r + 1) && base.c < col) hasTargetAhead = true;
+            else if (this.direction === Direction.RIGHT && (row === base.r || row === base.r + 1) && base.c > col) hasTargetAhead = true;
+        }
+
+        let shootChance = 0.015;
+        if (hasWallOrBaseAhead) shootChance = 0.15;
+        else if (hasTargetAhead) shootChance = 0.25;
+
+        if (Math.random() < shootChance) {
+            this.shoot();
         }
     }
 
