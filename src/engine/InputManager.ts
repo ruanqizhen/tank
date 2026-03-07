@@ -29,6 +29,12 @@ export class InputManager {
         this.canvas.addEventListener('mousedown', this.handleMouseDown);
         this.canvas.addEventListener('mouseup', this.handleMouseUp);
         this.canvas.addEventListener('mouseleave', this.handleMouseLeave);
+
+        // Touch support
+        this.canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
+        this.canvas.addEventListener('touchmove', this.handleTouchMove, { passive: false });
+        this.canvas.addEventListener('touchend', this.handleTouchEnd, { passive: false });
+        this.canvas.addEventListener('touchcancel', this.handleTouchEnd, { passive: false });
     }
 
     private handleKeyDown = (e: KeyboardEvent) => {
@@ -145,6 +151,30 @@ export class InputManager {
 
     private handleMouseLeave = () => {
         this.isLeftMouseDown = false;
+    };
+
+    private handleTouchStart = (e: TouchEvent) => {
+        e.preventDefault();
+        if (e.touches.length > 0) {
+            const touch = e.touches[0];
+            this.mouseLogicalPos = this.toLogical(touch.clientX, touch.clientY);
+            this.isLeftMouseDown = true;
+            this.actionState.confirm = true;
+        }
+    };
+
+    private handleTouchMove = (e: TouchEvent) => {
+        e.preventDefault();
+        if (e.touches.length > 0) {
+            const touch = e.touches[0];
+            this.mouseLogicalPos = this.toLogical(touch.clientX, touch.clientY);
+        }
+    };
+
+    private handleTouchEnd = (e: TouchEvent) => {
+        e.preventDefault();
+        this.isLeftMouseDown = false;
+        this.actionState.confirm = false;
     };
 
     public getActionState(): ActionState {
