@@ -542,24 +542,35 @@ export class GameManager {
         // Lives
         this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
         this.ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
-        this.ctx.fillText('生命', 260, 26);
+        this.ctx.fillText('生命', 220, 26);
         this.ctx.fillStyle = '#ff3366';
         this.ctx.font = 'bold 14px "Orbitron", sans-serif';
-        this.ctx.fillText(`${'♥'.repeat(Math.max(0, this.player.lives))}`, 292, 26);
+        this.ctx.fillText(`${'♥'.repeat(Math.max(0, this.player.lives))}`, 252, 26);
+
+        // Grade/Level
+        this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        this.ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
+        this.ctx.fillText('等级', 330, 26);
+        this.ctx.fillStyle = '#00ff00';
+        this.ctx.font = 'bold 14px "Orbitron", sans-serif';
+        const gradeText = this.player.isMax ? 'MAX' : this.player.grade.toString();
+        this.ctx.fillText(gradeText, 362, 26);
+
         // Enemy count (on-screen + not yet spawned)
         const enemiesLeft = this.enemies.length + this.spawnSystem.getRemainingToSpawn();
         this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
         this.ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
-        this.ctx.fillText('敌军', 390, 26);
+        this.ctx.fillText('敌军', 420, 26);
         this.ctx.fillStyle = '#ffcc00';
         this.ctx.font = 'bold 14px "Orbitron", sans-serif';
-        this.ctx.fillText(`${enemiesLeft}`, 422, 26);
+        this.ctx.fillText(`${enemiesLeft}`, 452, 26);
+
         // Stage
         this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
         this.ctx.font = 'bold 12px "Noto Sans SC", sans-serif';
-        this.ctx.fillText('关卡', 500, 26);
+        this.ctx.fillText('关卡', 520, 26);
         this.ctx.fillStyle = '#fff';
         this.ctx.font = 'bold 14px "Orbitron", sans-serif';
-        this.ctx.fillText(`${this.currentStageIdx + 1}`, 532, 26);
+        this.ctx.fillText(`${this.currentStageIdx + 1}`, 552, 26);
     }
 }

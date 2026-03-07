@@ -13,6 +13,15 @@
     href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+SC:wght@400;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css" />
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
+  <script type="text/javascript">
+    (function (c, l, a, r, i, t, y) {
+      c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments) };
+      t = l.createElement(r); t.async = 1; t.src = "https://www.clarity.ms/tag/" + i;
+      y = l.getElementsByTagName(r)[0]; y.parentNode.insertBefore(t, y);
+    })(window, document, "clarity", "script", "jxmn1qjx88");
+  </script>
 </head>
 
 <body>
@@ -58,7 +67,10 @@
       <div class="modal-content">
         <button id="close-help" class="close-btn">&times;</button>
         <div class="modal-body">
-          <h2>游戏指南</h2>
+          <section>
+            <h3>🎯 游戏目标</h3>
+            <p>你的使命是<strong>守护基地（老鹰）</strong>并<strong>消灭所有敌军坦克</strong>。如果基地被摧毁或你的生命值耗尽，游戏结束。</p>
+          </section>
 
           <section>
             <h3>🎮 操作说明</h3>
@@ -94,7 +106,7 @@
           </section>
 
           <section class="warning">
-            <p>⚠️ 注意：烟山版特性 —— <strong>敌人也可以拾取道具</strong>，并会对你产生不利影响（如扣除生命、降级等）！</p>
+            <p>⚠️ 注意：<strong>敌人也可以拾取道具</strong>，并会对你产生不利影响（如扣除生命、降级等）！</p>
           </section>
         </div>
       </div>
@@ -102,6 +114,7 @@
     <canvas id="gameCanvas" width="600" height="800"></canvas>
   </div>
   <script type="module" src="/src/main.ts"></script>
+  <script async src="https://hm.baidu.com/hm.js?b3f6e7ec9302021671173e3fad14f4cd"></script>
 </body>
 
 </html>
