@@ -69,8 +69,6 @@ export class PlayerTank extends Tank {
 
     public applyDamage() {
         if (this.hasShield) {
-            this.hasShield = false;
-            this.shieldTimer = 0;
             return;
         }
 
