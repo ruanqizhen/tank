@@ -117,10 +117,11 @@ export abstract class Tank extends Entity {
         let mainColor: string, darkColor: string, lightColor: string, accentColor: string;
 
         if (isPlayer) {
-            mainColor = '#4a7a2e';     // Military olive
-            darkColor = '#2d5a1a';     // Dark olive
-            lightColor = '#6aaa3e';    // Light olive
-            accentColor = '#8bc34a';   // Bright green accent
+            mainColor = '#22c55e';     // Vibrant neon green
+            darkColor = '#16a34a';     // Deep but bright green
+            lightColor = '#4ade80';    // Very bright highlight green
+            accentColor = '#bbf7d0';   // Almost white-green for extreme shine
+
         } else if (this.colorOverride) {
             mainColor = this.colorOverride;
             // Derive dark/light from override
