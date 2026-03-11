@@ -10,7 +10,6 @@ export class EnemyTank extends Tank {
 
     // AI State
     private stuckFrames: number = 0;
-    private randomTurnTimer: number = 180;
     private lastX: number = 0;
     private lastY: number = 0;
     private positionQuietFrames: number = 0;
@@ -21,12 +20,9 @@ export class EnemyTank extends Tank {
 
     // Advanced AI
     public behavior: EnemyBehavior = EnemyBehavior.ATTACK;
-    private pathfinder: AStarPathfinder | null = null;
+    private pathfinder: AStarPathfinder;
     private currentPath: Direction[] = [];
     private pathRefreshTimer: number = 0;
-    private patrolPoints: { col: number; row: number }[] = [];
-    private currentPatrolIndex: number = 0;
-    private defenseHome: { col: number; row: number } | null = null;
 
     constructor(gameManager: GameManager, x: number, y: number, grade: TankGrade, holdsPowerUp: boolean = false, behavior: EnemyBehavior = EnemyBehavior.ATTACK) {
         super(gameManager);
@@ -42,50 +38,18 @@ export class EnemyTank extends Tank {
 
         this.pathfinder = new AStarPathfinder(this.gameManager.getMap());
 
-        if (behavior === EnemyBehavior.DEFENSE) {
-            this.defenseHome = { col: Math.round(x), row: Math.round(y) };
-            this.initPatrolPoints();
-        }
-
         switch (grade) {
             case TankGrade.BASIC:
-                this.hp = 1;
-                this.speed = 1.5;
-                this.bulletSpeed = 4;
-                this.bulletPower = 1;
-                break;
+                this.hp = 1; this.speed = 1.5; this.bulletSpeed = 4; this.bulletPower = 1; break;
             case TankGrade.FAST:
-                this.hp = 1;
-                this.speed = 2.5;
-                this.bulletSpeed = 6;
-                this.bulletPower = 1;
-                break;
+                this.hp = 1; this.speed = 2.5; this.bulletSpeed = 6; this.bulletPower = 1; break;
             case TankGrade.POWER:
-                this.hp = 1;
-                this.speed = 1.5;
-                this.bulletSpeed = 4;
-                this.bulletPower = 2;
-                break;
+                this.hp = 1; this.speed = 1.5; this.bulletSpeed = 4; this.bulletPower = 2; break;
             case TankGrade.ARMOR:
-                this.hp = 4;
-                this.speed = 1.5;
-                this.bulletSpeed = 4;
-                this.bulletPower = 1;
-                break;
+                this.hp = 4; this.speed = 1.5; this.bulletSpeed = 4; this.bulletPower = 1; break;
         }
 
         this.shootCooldown = 60;
-    }
-
-    private initPatrolPoints() {
-        const col = Math.round(this.x / CELL_SIZE);
-        const row = Math.round(this.y / CELL_SIZE);
-        this.patrolPoints = [
-            { col, row },
-            { col: Math.min(col + 4, 28), row },
-            { col: Math.min(col + 4, 28), row: Math.min(row + 4, 36) },
-            { col, row: Math.min(row + 4, 36) }
-        ];
     }
 
     public upgrade(newGrade: TankGrade) {
@@ -108,12 +72,10 @@ export class EnemyTank extends Tank {
         this.hp--;
 
         if (this.hp <= 0) {
-            // Drop power-up if this was a flashing enemy
             if (this.holdsPowerUp) {
                 this.gameManager.getPowerUpSystem().spawnPowerUp(this.x, this.y);
             }
             this.isDead = true;
-            // Reward score based on grade
             let score = 0;
             switch (this.grade) {
                 case TankGrade.BASIC: score = 100; break;
@@ -121,21 +83,17 @@ export class EnemyTank extends Tank {
                 case TankGrade.POWER: score = 300; break;
                 case TankGrade.ARMOR: score = 400; break;
             }
-            // Trigger explosion 
             this.gameManager.getParticleSystem().emitExplosion(this.x + this.w / 2, this.y + this.h / 2, 40, '#f22');
             this.gameManager.addScore(score);
         } else {
-            // Armor tank hit flash
             this.hitFlashActive = true;
             this.flashTimer = 4;
-            // Emit minor debris
             this.gameManager.getParticleSystem().emitDebris(this.x + this.w / 2, this.y + this.h / 2, 10, '#ddd');
         }
     }
 
     public update(dt: number) {
         if (this.isDead) return;
-
         if (this.gameManager.getPowerUpSystem().clockTimer > 0) return;
 
         if (!this.hasSpawned) {
@@ -158,14 +116,14 @@ export class EnemyTank extends Tank {
         this.updateAI();
     }
 
+    // ═══════════════════════════════════════════════════════
+    //  HELPER METHODS
+    // ═══════════════════════════════════════════════════════
+
     private isAlignedToGrid(): boolean {
-        // Tank is aligned if both x and y are multiples of CELL_SIZE (20)
         const mx = Math.abs(this.x % CELL_SIZE);
         const my = Math.abs(this.y % CELL_SIZE);
-        // Use a stricter threshold (0.2px) to prevent premature turning
-        const alignedX = mx < 0.2 || mx > CELL_SIZE - 0.2;
-        const alignedY = my < 0.2 || my > CELL_SIZE - 0.2;
-        return alignedX && alignedY;
+        return (mx < 0.2 || mx > CELL_SIZE - 0.2) && (my < 0.2 || my > CELL_SIZE - 0.2);
     }
 
     private snapToGrid() {
@@ -173,30 +131,87 @@ export class EnemyTank extends Tank {
         this.y = Math.round(this.y / CELL_SIZE) * CELL_SIZE;
     }
 
+    private getGridPos(): { col: number; row: number } {
+        return {
+            col: Math.round(this.x / CELL_SIZE),
+            row: Math.round(this.y / CELL_SIZE)
+        };
+    }
+
+    private getOpposite(dir: Direction): Direction {
+        if (dir === Direction.UP) return Direction.DOWN;
+        if (dir === Direction.DOWN) return Direction.UP;
+        if (dir === Direction.LEFT) return Direction.RIGHT;
+        return Direction.LEFT;
+    }
+
+    /** Check if a direction is passable for a 2-cell-wide tank */
+    private canMoveInDirection(dir: Direction): boolean {
+        const map = this.gameManager.getMap();
+        const col = Math.round(this.x / CELL_SIZE);
+        const row = Math.round(this.y / CELL_SIZE);
+
+        const ok = (r: number, c: number) => {
+            const t = map.getTerrainType(r, c);
+            return t === 0 || t === 3 || t === 5; // empty, forest, ice
+        };
+
+        if (dir === Direction.UP) return ok(row - 1, col) && ok(row - 1, col + 1);
+        if (dir === Direction.DOWN) return ok(row + 2, col) && ok(row + 2, col + 1);
+        if (dir === Direction.LEFT) return ok(row, col - 1) && ok(row + 1, col - 1);
+        return ok(row, col + 2) && ok(row + 1, col + 2); // RIGHT
+    }
+
+    /** Get all passable directions */
+    private getPassableDirections(): Direction[] {
+        return [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT]
+            .filter(d => this.canMoveInDirection(d));
+    }
+
+    /** Check if another enemy tank is overlapping or very close */
+    private getOverlappingEnemy(): EnemyTank | null {
+        const entities = this.gameManager.getEntities();
+        for (const e of entities) {
+            if (e === this || e.isDead || e.faction !== TankFaction.ENEMY) continue;
+            if (!(e instanceof EnemyTank) || !(e as EnemyTank).hasSpawned) continue;
+            // Check overlap with a small margin
+            const dx = Math.abs(this.x - e.x);
+            const dy = Math.abs(this.y - e.y);
+            if (dx < this.w * 0.8 && dy < this.h * 0.8) {
+                return e as EnemyTank;
+            }
+        }
+        return null;
+    }
+
+    /** Manhattan distance to a grid cell */
+    private gridDistTo(col: number, row: number): number {
+        const pos = this.getGridPos();
+        return Math.abs(pos.col - col) + Math.abs(pos.row - row);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  LINE OF SIGHT: Can we see the player in a straight line?
+    // ═══════════════════════════════════════════════════════
+
     private getLineOfSightDirection(): Direction | null {
         const player = this.gameManager.getPlayer();
         if (!player || player.isDead) return null;
 
         const map = this.gameManager.getMap();
-
-        // Strictly use snapped grid coordinates for the 2-cell check
         const col = Math.round(this.x / CELL_SIZE);
         const row = Math.round(this.y / CELL_SIZE);
         const pCol = Math.round(player.x / CELL_SIZE);
         const pRow = Math.round(player.y / CELL_SIZE);
 
+        // Same column — check vertical line of sight
         if (col === pCol) {
-            // Check BOTH columns of the 2-cell width path
-            const minY = Math.min(this.y, player.y);
-            const maxY = Math.max(this.y, player.y);
-            const minR = Math.floor(minY / CELL_SIZE);
-            const maxR = Math.floor(maxY / CELL_SIZE);
-
+            const minR = Math.min(row, pRow);
+            const maxR = Math.max(row, pRow);
             let blocked = false;
             for (let r = minR; r <= maxR; r++) {
                 const t1 = map.getTerrainType(r, col);
                 const t2 = map.getTerrainType(r, col + 1);
-                // Obstacles: brick(1), steel(2), or base(6)
                 if ([1, 2, 6].includes(t1) || [1, 2, 6].includes(t2)) {
                     blocked = true;
                     break;
@@ -205,13 +220,12 @@ export class EnemyTank extends Tank {
             if (!blocked) {
                 return (player.y < this.y) ? Direction.UP : Direction.DOWN;
             }
-        } else if (row === pRow) {
-            // Check BOTH rows of the 2-cell height path
-            const minX = Math.min(this.x, player.x);
-            const maxX = Math.max(this.x, player.x);
-            const minC = Math.floor(minX / CELL_SIZE);
-            const maxC = Math.floor(maxX / CELL_SIZE);
+        }
 
+        // Same row — check horizontal line of sight
+        if (row === pRow) {
+            const minC = Math.min(col, pCol);
+            const maxC = Math.max(col, pCol);
             let blocked = false;
             for (let c = minC; c <= maxC; c++) {
                 const t1 = map.getTerrainType(row, c);
@@ -225,241 +239,82 @@ export class EnemyTank extends Tank {
                 return (player.x < this.x) ? Direction.LEFT : Direction.RIGHT;
             }
         }
+
         return null;
     }
 
-    /** Returns the best axis-aligned direction to move toward a target pixel position, filtered by passable dirs */
-    private getDirectionToward(targetX: number, targetY: number): Direction {
-        const cx = this.x + this.w / 2;
-        const cy = this.y + this.h / 2;
-        const dx = targetX - cx;
-        const dy = targetY - cy;
+    // ═══════════════════════════════════════════════════════
+    //  TARGET SELECTION — Priority-based
+    // ═══════════════════════════════════════════════════════
 
-        // Prefer the axis with the larger delta
-        if (Math.abs(dx) > Math.abs(dy)) {
-            return dx > 0 ? Direction.RIGHT : Direction.LEFT;
-        } else {
-            return dy > 0 ? Direction.DOWN : Direction.UP;
-        }
-    }
-
-    /** Check if a direction is passable for a 2-cell-wide tank */
-    private canMoveInDirection(dir: Direction): boolean {
-        const map = this.gameManager.getMap();
-        // Since we snapToGrid before calling this at junctions, x and y should be multiples of CELL_SIZE
-        const col = Math.round(this.x / CELL_SIZE);
-        const row = Math.round(this.y / CELL_SIZE);
-
-        // Helper: check if a specific cell is passable
-        const ok = (r: number, c: number) => {
-            const t = map.getTerrainType(r, c);
-            return t === 0 || t === 3 || t === 5; // empty, forest, ice
-        };
-
-        if (dir === Direction.UP) {
-            return ok(row - 1, col) && ok(row - 1, col + 1);
-        } else if (dir === Direction.DOWN) {
-            return ok(row + 2, col) && ok(row + 2, col + 1);
-        } else if (dir === Direction.LEFT) {
-            return ok(row, col - 1) && ok(row + 1, col - 1);
-        } else { // RIGHT
-            return ok(row, col + 2) && ok(row + 1, col + 2);
-        }
-    }
-
-    /** Check if the obstacle ahead is destructible (brick) */
-    private isBrickAhead(): boolean {
-        const map = this.gameManager.getMap();
-        const col = Math.round(this.x / CELL_SIZE);
-        const row = Math.round(this.y / CELL_SIZE);
-        const isBrick = (r: number, c: number) => map.getTerrainType(r, c) === 1;
-
-        if (this.direction === Direction.UP) {
-            return isBrick(row - 1, col) || isBrick(row - 1, col + 1);
-        } else if (this.direction === Direction.DOWN) {
-            return isBrick(row + 2, col) || isBrick(row + 2, col + 1);
-        } else if (this.direction === Direction.LEFT) {
-            return isBrick(row, col - 1) || isBrick(row + 1, col - 1);
-        } else {
-            return isBrick(row, col + 2) || isBrick(row + 1, col + 2);
-        }
-    }
-
-    /** Get all passable directions */
-    private getPassableDirections(): Direction[] {
-        return [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT]
-            .filter(d => this.canMoveInDirection(d));
-    }
-
-    /** Get the opposite direction */
-    private getOpposite(dir: Direction): Direction {
-        if (dir === Direction.UP) return Direction.DOWN;
-        if (dir === Direction.DOWN) return Direction.UP;
-        if (dir === Direction.LEFT) return Direction.RIGHT;
-        return Direction.LEFT;
-    }
-
-    /** Pick the best direction from a list, biased toward a target */
-    private pickBestDirection(candidates: Direction[], targetDir: Direction): Direction {
-        // If target direction is in candidates, pick it with 60% chance
-        if (candidates.includes(targetDir) && Math.random() < 0.6) {
-            return targetDir;
-        }
-        // Otherwise pick a random candidate
-        return candidates[Math.floor(Math.random() * candidates.length)];
-    }
-
-    /** Find the closest power-up on the map and return direction toward it, or null */
-    private getPowerUpDirection(): Direction | null {
+    private selectTargetAndPath(): void {
+        const pos = this.getGridPos();
+        const player = this.gameManager.getPlayer();
         const powerUps = this.gameManager.getPowerUpSystem().getPowerUps().filter(p => !p.isDead);
-        if (powerUps.length === 0) return null;
 
-        const cx = this.x + this.w / 2;
-        const cy = this.y + this.h / 2;
+        // Priority 2: Power-ups on the map → go grab them
+        if (powerUps.length > 0) {
+            // Find the closest power-up by grid distance
+            let closestPU = powerUps[0];
+            let closestDist = Infinity;
+            for (const pu of powerUps) {
+                const puCol = Math.round(pu.x / CELL_SIZE);
+                const puRow = Math.round(pu.y / CELL_SIZE);
+                const d = this.gridDistTo(puCol, puRow);
+                if (d < closestDist) {
+                    closestDist = d;
+                    closestPU = pu;
+                }
+            }
 
-        let closest = powerUps[0];
-        let closestDist = Infinity;
-        for (const pu of powerUps) {
-            const d = Math.abs(pu.x - cx) + Math.abs(pu.y - cy);
-            if (d < closestDist) {
-                closestDist = d;
-                closest = pu;
+            const puCol = Math.round(closestPU.x / CELL_SIZE);
+            const puRow = Math.round(closestPU.y / CELL_SIZE);
+            const path = this.pathfinder.findPath(pos.col, pos.row, puCol, puRow, this.bulletPower);
+            if (path.length > 0) {
+                this.currentPath = path;
+                return;
             }
         }
 
-        return this.getDirectionToward(closest.x + closest.w / 2, closest.y + closest.h / 2);
-    }
+        // Priority 3: Player nearby (within ~200px = 10 cells) → hunt them
+        if (player && !player.isDead) {
+            const pCol = Math.round(player.x / CELL_SIZE);
+            const pRow = Math.round(player.y / CELL_SIZE);
+            const playerDist = this.gridDistTo(pCol, pRow);
 
-    /** Get direction toward the base center */
-    private getBaseDirection(): Direction {
-        const baseCoords = this.gameManager.getMap().baseCoords;
-        if (baseCoords.length === 0) {
-            return Direction.DOWN;
+            if (playerDist < 12) {
+                const path = this.pathfinder.findPathToPlayer(pos.col, pos.row, pCol, pRow, this.bulletPower);
+                if (path.length > 0) {
+                    this.currentPath = path;
+                    return;
+                }
+            }
         }
-        const avgC = baseCoords.reduce((s, b) => s + b.c, 0) / baseCoords.length;
-        const avgR = baseCoords.reduce((s, b) => s + b.r, 0) / baseCoords.length;
-        const baseX = (avgC + 0.5) * CELL_SIZE;
-        const baseY = (avgR + 0.5) * CELL_SIZE;
-        return this.getDirectionToward(baseX, baseY);
-    }
 
-    /** Check if the player is within a given pixel distance */
-    private isPlayerNearby(range: number): boolean {
-        const player = this.gameManager.getPlayer();
-        if (!player || player.isDead) return false;
-        const dx = (player.x + player.w / 2) - (this.x + this.w / 2);
-        const dy = (player.y + player.h / 2) - (this.y + this.h / 2);
-        return Math.abs(dx) + Math.abs(dy) < range;
-    }
-
-    private shouldUseAStar(): boolean {
-        return true;
-    }
-
-    private updatePath() {
-        if (!this.pathfinder) return;
-
-        this.pathRefreshTimer--;
-        if (this.pathRefreshTimer > 0 && this.currentPath.length > 0) return;
-
-        this.pathRefreshTimer = 30; // Always reset timer to prevent spamming
-
-        const startCol = Math.round(this.x / CELL_SIZE);
-        const startRow = Math.round(this.y / CELL_SIZE);
-
-        // Try base first (highest priority)
-        const basePath = this.pathfinder.findPathToBase(startCol, startRow);
+        // Priority 4: Default — attack the base via shortest route
+        const basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
         if (basePath.length > 0) {
             this.currentPath = basePath;
             return;
         }
 
-        let targetCol: number = 14, targetRow: number = 36;
-
-        switch (this.behavior) {
-            case EnemyBehavior.ATTACK:
-                const player = this.gameManager.getPlayer();
-                if (player && !player.isDead && this.isPlayerNearby(300)) {
-                    targetCol = Math.round(player.x / CELL_SIZE);
-                    targetRow = Math.round(player.y / CELL_SIZE);
-                } else {
-                    const baseCoords = this.gameManager.getMap().baseCoords;
-                    if (baseCoords.length > 0) {
-                        const target = baseCoords[0];
-                        targetCol = target.c;
-                        targetRow = target.r;
-                    }
-                }
-                break;
-
-            case EnemyBehavior.GUERRILLA:
-                const powerUps = this.gameManager.getPowerUpSystem().getPowerUps().filter(p => !p.isDead);
-                if (powerUps.length > 0) {
-                    const closest = powerUps[0];
-                    targetCol = Math.round(closest.x / CELL_SIZE);
-                    targetRow = Math.round(closest.y / CELL_SIZE);
-                } else {
-                    targetCol = Math.round(Math.random() * 28);
-                    targetRow = Math.round(Math.random() * 36);
-                }
-                break;
-
-            case EnemyBehavior.DEFENSE:
-                if (this.patrolPoints.length > 0) {
-                    const target = this.patrolPoints[this.currentPatrolIndex];
-                    const dist = Math.abs(this.x / CELL_SIZE - target.col) + Math.abs(this.y / CELL_SIZE - target.row);
-                    if (dist < 2) {
-                        this.currentPatrolIndex = (this.currentPatrolIndex + 1) % this.patrolPoints.length;
-                    }
-                    targetCol = target.col;
-                    targetRow = target.row;
-                } else {
-                    targetCol = this.defenseHome?.col ?? startCol;
-                    targetRow = this.defenseHome?.row ?? startRow;
-                }
-                break;
-        }
-
-        const newPath = this.pathfinder.findPath(startCol, startRow, targetCol, targetRow);
-        if (newPath.length > 0) {
-            this.currentPath = newPath;
+        // Fallback: if no path found, head toward player
+        if (player && !player.isDead) {
+            const pCol = Math.round(player.x / CELL_SIZE);
+            const pRow = Math.round(player.y / CELL_SIZE);
+            const path = this.pathfinder.findPathToPlayer(pos.col, pos.row, pCol, pRow, this.bulletPower);
+            if (path.length > 0) {
+                this.currentPath = path;
+            }
         }
     }
 
-    private followPath(): boolean {
-        if (this.currentPath.length === 0) return false;
-
-        const nextDir = this.currentPath[0];
-        if (this.direction === nextDir) {
-            if (this.canMoveInDirection(nextDir)) {
-                this.currentPath.shift();
-                return true;
-            } else {
-                // If blocked by brick, shoot
-                if (this.isBrickAhead()) {
-                    this.shoot();
-                } else {
-                    // Impassable, clear path and let AI try something else
-                    this.currentPath = [];
-                }
-                return false;
-            }
-        } else if (this.isAlignedToGrid()) {
-            this.snapToGrid();
-            // Don't turn if blocked, just try to shoot or clear path
-            if (this.canMoveInDirection(nextDir)) {
-                this.direction = nextDir;
-                this.currentPath.shift();
-                this.stuckFrames = 0;
-            } else {
-                if (this.isBrickAhead()) this.shoot();
-                else this.currentPath = [];
-            }
-        }
-        return false;
-    }
+    // ═══════════════════════════════════════════════════════
+    //  MAIN AI LOOP
+    // ═══════════════════════════════════════════════════════
 
     private updateAI() {
+        // Track if stuck
         const distSq = (this.x - this.lastX) ** 2 + (this.y - this.lastY) ** 2;
         if (distSq < 0.01) {
             this.positionQuietFrames++;
@@ -469,127 +324,101 @@ export class EnemyTank extends Tank {
         this.lastX = this.x;
         this.lastY = this.y;
 
-        if (this.stuckFrames > 30 || this.positionQuietFrames > 30) {
+        // Emergency recovery
+        if (this.stuckFrames > 30 || this.positionQuietFrames > 45) {
             this.recoverFromStuck();
             return;
         }
 
         const aligned = this.isAlignedToGrid();
-        if (aligned) {
-            this.snapToGrid();
-        }
+        if (aligned) this.snapToGrid();
 
+        // ── Priority 1: Line-of-sight to player → SHOOT ──
         const losDir = this.getLineOfSightDirection();
-
         if (losDir !== null) {
             if (this.direction === losDir) {
-                if (aligned) this.shoot();
-            } else if (aligned && this.canMoveInDirection(losDir)) {
-                this.snapToGrid();
+                // Already facing — fire!
+                this.shoot();
+            } else if (aligned) {
+                // Turn to face the player
                 this.direction = losDir;
                 this.stuckFrames = 0;
             }
+            // Still proceed to move (can shoot AND move)
         }
 
-        if (this.shouldUseAStar() && aligned) {
-            this.updatePath();
-
-            const passable = this.getPassableDirections();
-            const sideDirs = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
-
-            if (sideDirs.length > 0 && Math.random() < 0.3) {
-                const baseDir = this.getBaseDirection();
-                this.direction = this.pickBestDirection(sideDirs, baseDir);
-                this.currentPath = [];
-                this.stuckFrames = 0;
-            } else if (this.followPath()) {
-                this.stuckFrames = 0;
-            }
-        } else {
-            this.executeLegacyAI(aligned);
-        }
-
-        this.executeMovement();
-
+        // ── Refresh pathfinding periodically ──
         if (aligned) {
-            this.handleShooting();
+            this.pathRefreshTimer--;
+            if (this.pathRefreshTimer <= 0 || this.currentPath.length === 0) {
+                this.pathRefreshTimer = 45 + Math.floor(Math.random() * 15);
+                this.selectTargetAndPath();
+            }
         }
-    }
 
-    private executeLegacyAI(aligned: boolean) {
-        if (this.isPlayerNearby(200) && aligned) {
-            const player = this.gameManager.getPlayer();
-            const chaseDir = this.getDirectionToward(player.x + player.w / 2, player.y + player.h / 2);
-            if (this.canMoveInDirection(chaseDir) && this.direction !== chaseDir) {
-                this.snapToGrid();
-                this.direction = chaseDir;
-                this.stuckFrames = 0;
-            }
-        } else if (aligned && this.getPowerUpDirection() !== null) {
-            const puDir = this.getPowerUpDirection()!;
-            if (this.canMoveInDirection(puDir) && this.direction !== puDir) {
-                this.snapToGrid();
-                this.direction = puDir;
-                this.stuckFrames = 0;
-            }
-        } else if (aligned) {
-            const canMoveFwd = this.canMoveInDirection(this.direction);
-            const brickAhead = !canMoveFwd && this.isBrickAhead();
-
-            if (canMoveFwd) {
-                this.randomTurnTimer--;
-                if (this.randomTurnTimer <= 0) {
-                    this.randomTurnTimer = 60 + Math.floor(Math.random() * 60);
+        // ── Crowding avoidance: detour if overlapping another enemy ──
+        if (aligned) {
+            const crowdingEnemy = this.getOverlappingEnemy();
+            if (crowdingEnemy) {
+                // The tank that has been stuck longer should reroute
+                if (this.stuckFrames >= (crowdingEnemy as any).stuckFrames) {
                     const passable = this.getPassableDirections();
-                    const sideDirs = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
-                    if (sideDirs.length > 0) {
-                        const turnChance = 0.8;
-                        if (Math.random() < turnChance) {
-                            const baseDir = this.getBaseDirection();
-                            this.snapToGrid();
-                            this.direction = this.pickBestDirection(sideDirs, baseDir);
-                            this.stuckFrames = 0;
-                        }
-                    }
-                }
-            } else if (brickAhead) {
-                this.shoot();
-                if (this.stuckFrames >= 8) {
-                    const passable = this.getPassableDirections();
-                    const sideDirs = passable.filter(d => d !== this.getOpposite(this.direction));
-                    if (sideDirs.length > 0) {
-                        this.snapToGrid();
-                        this.direction = this.pickBestDirection(sideDirs, this.getBaseDirection());
+                    // Prefer perpendicular directions
+                    const perpDirs = passable.filter(d =>
+                        d !== this.direction && d !== this.getOpposite(this.direction)
+                    );
+                    const choices = perpDirs.length > 0 ? perpDirs : passable;
+                    if (choices.length > 0) {
+                        this.direction = choices[Math.floor(Math.random() * choices.length)];
+                        this.currentPath = [];
+                        this.pathRefreshTimer = 15;
                         this.stuckFrames = 0;
                     }
                 }
-            } else {
-                this.snapToGrid();
-                const passable = this.getPassableDirections();
-                const noReverse = passable.filter(d => d !== this.getOpposite(this.direction));
-                const candidates = noReverse.length > 0 ? noReverse : passable;
-
-                if (candidates.length > 0) {
-                    this.direction = this.pickBestDirection(candidates, this.getBaseDirection());
-                } else {
-                    this.direction = this.getOpposite(this.direction);
-                }
-                this.stuckFrames = 0;
-            }
-
-            if (this.stuckFrames >= 20) {
-                this.snapToGrid();
-                const passable = this.getPassableDirections();
-                const noReverse = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
-                if (noReverse.length > 0) {
-                    this.direction = noReverse[Math.floor(Math.random() * noReverse.length)];
-                } else if (passable.length > 0) {
-                    this.direction = passable[Math.floor(Math.random() * passable.length)];
-                }
-                this.stuckFrames = 0;
             }
         }
+
+        // ── Follow path ──
+        if (this.currentPath.length > 0 && aligned) {
+            const nextDir = this.currentPath[0];
+
+            if (this.canMoveInDirection(nextDir)) {
+                // Path is clear — go
+                if (this.direction !== nextDir) {
+                    this.direction = nextDir;
+                }
+                this.currentPath.shift();
+                this.stuckFrames = 0;
+            } else {
+                // Path is blocked — is it destructible?
+                const pos = this.getGridPos();
+                if (this.pathfinder.isDestructibleAhead(pos.col, pos.row, nextDir, this.bulletPower)) {
+                    // Face the obstacle and shoot to clear
+                    if (this.direction !== nextDir) {
+                        this.direction = nextDir;
+                    }
+                    this.shoot();
+                    this.stuckFrames++;
+                } else {
+                    // Truly impassable — recalculate path
+                    this.currentPath = [];
+                    this.pathRefreshTimer = 0; // Force immediate refresh
+                }
+            }
+        }
+
+        // ── Execute movement ──
+        this.executeMovement();
+
+        // ── Shoot at base/walls that are ahead ──
+        if (aligned) {
+            this.handleOpportunisticShooting();
+        }
     }
+
+    // ═══════════════════════════════════════════════════════
+    //  MOVEMENT
+    // ═══════════════════════════════════════════════════════
 
     private executeMovement() {
         let dx = 0, dy = 0;
@@ -614,14 +443,17 @@ export class EnemyTank extends Tank {
         this.y += res.dy;
     }
 
-    private handleShooting() {
+    // ═══════════════════════════════════════════════════════
+    //  SHOOTING
+    // ═══════════════════════════════════════════════════════
+
+    /** Shoot at targets of opportunity: walls ahead, base ahead, player ahead */
+    private handleOpportunisticShooting() {
         const map = this.gameManager.getMap();
         const col = Math.floor((this.x + this.w / 2) / CELL_SIZE);
         const row = Math.floor((this.y + this.h / 2) / CELL_SIZE);
 
-        let hasWallOrBaseAhead = false;
-        let hasTargetAhead = false;
-
+        // Scan ahead up to 8 cells
         for (let step = 1; step <= 8; step++) {
             let checkR = row, checkC = col;
             if (this.direction === Direction.UP) checkR = row - step;
@@ -630,46 +462,46 @@ export class EnemyTank extends Tank {
             else if (this.direction === Direction.RIGHT) checkC = col + step;
 
             const type = map.getTerrainType(checkR, checkC);
-            if (type === 1 || type === 2 || type === 6) {
-                hasWallOrBaseAhead = true;
-                break;
+
+            // Base ahead — FIRE IMMEDIATELY
+            if (type === 6) {
+                this.shoot();
+                return;
             }
-        }
 
-        const player = this.gameManager.getPlayer();
-        if (player && !player.isDead) {
-            const pCol = Math.floor((player.x + player.w / 2) / CELL_SIZE);
-            const pRow = Math.floor((player.y + player.h / 2) / CELL_SIZE);
+            // Player ahead
+            const player = this.gameManager.getPlayer();
+            if (player && !player.isDead) {
+                const pCol = Math.floor((player.x + player.w / 2) / CELL_SIZE);
+                const pRow = Math.floor((player.y + player.h / 2) / CELL_SIZE);
+                if (checkR === pRow && checkC === pCol) {
+                    this.shoot();
+                    return;
+                }
+            }
 
-            if (this.direction === Direction.UP && col === pCol && player.y < this.y) hasTargetAhead = true;
-            else if (this.direction === Direction.DOWN && col === pCol && player.y > this.y) hasTargetAhead = true;
-            else if (this.direction === Direction.LEFT && row === pRow && player.x < this.x) hasTargetAhead = true;
-            else if (this.direction === Direction.RIGHT && row === pRow && player.x > this.x) hasTargetAhead = true;
-        }
+            // Wall ahead — shoot if it's on our path and destructible
+            if (type === 1 || (type === 2 && this.bulletPower >= 2)) {
+                // Only shoot with some probability if it's far away
+                if (step <= 3 || Math.random() < 0.1) {
+                    this.shoot();
+                }
+                return;
+            }
 
-        const baseCoords = map.baseCoords;
-        for (const base of baseCoords) {
-            if (this.direction === Direction.UP && (col === base.c || col === base.c + 1) && base.r < row) hasTargetAhead = true;
-            else if (this.direction === Direction.DOWN && (col === base.c || col === base.c + 1) && base.r > row) hasTargetAhead = true;
-            else if (this.direction === Direction.LEFT && (row === base.r || row === base.r + 1) && base.c < col) hasTargetAhead = true;
-            else if (this.direction === Direction.RIGHT && (row === base.r || row === base.r + 1) && base.c > col) hasTargetAhead = true;
-        }
-
-        let shootChance = 0.015;
-        if (hasWallOrBaseAhead) shootChance = 0.15;
-        else if (hasTargetAhead) shootChance = 0.25;
-
-        if (Math.random() < shootChance) {
-            this.shoot();
+            // Steel that we can't break — stop scanning
+            if (type === 2) return;
         }
     }
 
+    // ═══════════════════════════════════════════════════════
+    //  RECOVERY
+    // ═══════════════════════════════════════════════════════
+
     private recoverFromStuck() {
         this.snapToGrid();
-        // 1. Try to blast through whatever might be in the way
-        this.shoot();
+        this.shoot(); // Try to blast through
 
-        // 2. Pick a new random passable direction that isn't the current one or its opposite
         const passable = this.getPassableDirections();
         const choices = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
 
@@ -678,43 +510,41 @@ export class EnemyTank extends Tank {
         } else if (passable.length > 0) {
             this.direction = passable[Math.floor(Math.random() * passable.length)];
         } else {
-            // Absolute last resort: just flip around
             this.direction = this.getOpposite(this.direction);
         }
 
         this.stuckFrames = 0;
         this.positionQuietFrames = 0;
+        this.currentPath = [];
+        this.pathRefreshTimer = 0;
     }
+
+    // ═══════════════════════════════════════════════════════
+    //  RENDERING
+    // ═══════════════════════════════════════════════════════
 
     public render(ctx: CanvasRenderingContext2D) {
         if (!this.hasSpawned) {
-            // Draw spawn animation (flashing star)
             ctx.fillStyle = (this.spawnTimer % 8 < 4) ? '#fff' : '#888';
             ctx.fillRect(this.x, this.y, this.w, this.h);
             return;
         }
 
-        // Determine color
-        let color = '#fff'; // Basic
+        let color = '#fff';
         if (this.grade === TankGrade.FAST) color = '#bbb';
         else if (this.grade === TankGrade.POWER) color = '#666';
         else if (this.grade === TankGrade.ARMOR) {
-            if (this.hitFlashActive) {
-                color = '#fff'; // White flash
-            } else {
-                if (this.hp === 4) color = '#0066ff'; // Strong blue
-                else if (this.hp === 3) color = '#5577bb'; // Muted blue
-                else if (this.hp === 2) color = '#888899'; // Very faded blue
-                else color = '#aaaaaa'; // Plain gray
-            }
+            if (this.hitFlashActive) color = '#fff';
+            else if (this.hp === 4) color = '#0066ff';
+            else if (this.hp === 3) color = '#5577bb';
+            else if (this.hp === 2) color = '#888899';
+            else color = '#aaaaaa';
         }
 
-        // Flashing if holds powerup
         if (this.holdsPowerUp && Math.floor(Date.now() / 150) % 2 === 0) {
-            color = '#f0f'; // Purple or bright color to indicate powerup
+            color = '#f0f';
         }
 
-        // Rely on base class render with specific color (update Tank.ts to support custom colors)
         this.colorOverride = color;
         super.render(ctx);
     }

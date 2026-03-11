@@ -44,7 +44,6 @@ export class CollisionSystem {
         const hits: Tank[] = [];
         for (const entity of entities) {
             if (entity.isDead) continue;
-            // Ignore enemies that are still in spawn animation
             if ((entity as any).hasSpawned === false) continue;
 
             const entityBox: AABB = {
@@ -108,8 +107,6 @@ export class CollisionSystem {
             else if (remainderY > 10 && remainderY < 20) newDy = Math.min(20 - remainderY, Math.abs(dx));
         }
 
-
-
         return { dx: newDx, dy: newDy };
     }
 
@@ -121,7 +118,6 @@ export class CollisionSystem {
                 const a = entities[i];
                 const b = entities[j];
                 if (a.isDead || b.isDead) continue;
-                // Skip entities still in spawn animation
                 if ((a as any).hasSpawned === false || (b as any).hasSpawned === false) continue;
 
                 const aBox: AABB = { x: a.x, y: a.y, w: a.w, h: a.h };
@@ -129,14 +125,11 @@ export class CollisionSystem {
 
                 if (!this.isIntersecting(aBox, bBox)) continue;
 
-                // Calculate overlap amounts
                 const overlapX = Math.min(aBox.x + aBox.w - bBox.x, bBox.x + bBox.w - aBox.x);
                 const overlapY = Math.min(aBox.y + aBox.h - bBox.y, bBox.y + bBox.h - aBox.y);
 
-                // Push apart along the axis with smaller overlap
-                const pushSpeed = 2; // pixels per frame
+                const pushSpeed = 2;
                 if (overlapX < overlapY) {
-                    // Push horizontally
                     if (a.x < b.x) {
                         a.x -= Math.min(pushSpeed, overlapX / 2);
                         b.x += Math.min(pushSpeed, overlapX / 2);
@@ -145,7 +138,6 @@ export class CollisionSystem {
                         b.x -= Math.min(pushSpeed, overlapX / 2);
                     }
                 } else {
-                    // Push vertically
                     if (a.y < b.y) {
                         a.y -= Math.min(pushSpeed, overlapY / 2);
                         b.y += Math.min(pushSpeed, overlapY / 2);
@@ -155,7 +147,6 @@ export class CollisionSystem {
                     }
                 }
 
-                // Clamp to bounds
                 a.x = Math.max(0, Math.min(BATTLE_AREA_W - a.w, a.x));
                 a.y = Math.max(0, Math.min(BATTLE_AREA_H - a.h, a.y));
                 b.x = Math.max(0, Math.min(BATTLE_AREA_W - b.w, b.x));
@@ -169,7 +160,6 @@ export class CollisionSystem {
         const entities = this.gameManager.getEntities();
         for (const tank of entities) {
             if (tank.isDead) continue;
-            // Ignore tanks in spawn animation
             if ((tank as any).hasSpawned === false) continue;
 
             const box: AABB = { x: tank.x, y: tank.y, w: tank.w, h: tank.h };
@@ -188,16 +178,14 @@ export class CollisionSystem {
                         const overlapX = Math.min(box.x + box.w - cellBox.x, cellBox.x + cellBox.w - box.x);
                         const overlapY = Math.min(box.y + box.h - cellBox.y, cellBox.y + cellBox.h - box.y);
 
-                        const pushSpeed = 1.5; // pixels per frame to gently slide them out
+                        const pushSpeed = 1.5;
                         if (overlapX < overlapY) {
-                            // Push horizontally away from wall center
                             if (box.x + box.w / 2 < cellBox.x + cellBox.w / 2) {
                                 tank.x -= Math.min(pushSpeed, overlapX);
                             } else {
                                 tank.x += Math.min(pushSpeed, overlapX);
                             }
                         } else {
-                            // Push vertically away from wall center
                             if (box.y + box.h / 2 < cellBox.y + cellBox.h / 2) {
                                 tank.y -= Math.min(pushSpeed, overlapY);
                             } else {
@@ -205,11 +193,9 @@ export class CollisionSystem {
                             }
                         }
 
-                        // Clamp to map bounds
                         tank.x = Math.max(0, Math.min(BATTLE_AREA_W - tank.w, tank.x));
                         tank.y = Math.max(0, Math.min(BATTLE_AREA_H - tank.h, tank.y));
 
-                        // Update current box so further checks in this frame use the new unstuck position
                         box.x = tank.x;
                         box.y = tank.y;
                     }
@@ -224,7 +210,6 @@ export class CollisionSystem {
         const allBullets = this.gameManager.getBullets();
         for (const otherBullet of allBullets) {
             if (otherBullet === bullet || otherBullet.isDead) continue;
-            // Only cancel out opposing faction bullets
             if (otherBullet.owner.faction !== bullet.owner.faction) {
                 if (this.isIntersecting(bullet.getAABB(), otherBullet.getAABB())) {
                     bullet.isDead = true;
@@ -237,7 +222,6 @@ export class CollisionSystem {
         // 2. Check entity collisions
         const hitEntities = this.queryEntities(bullet.getAABB());
         for (const entity of hitEntities) {
-            // Ignore own bullets or same faction (typically no friendly fire)
             if (entity === bullet.owner) continue;
             if (entity.faction === bullet.owner.faction) continue;
 
@@ -249,31 +233,26 @@ export class CollisionSystem {
             return;
         }
 
+        // 3. Terrain collisions
         const terrainHits = this.queryTerrain(bullet.getAABB());
+        // Sort so the front-most cell (the one the bullet hits first) is processed first
+        terrainHits.sort((a, b) => {
+            switch (bullet.direction) {
+                case Direction.UP:    return b.r - a.r;
+                case Direction.DOWN:  return a.r - b.r;
+                case Direction.LEFT:  return b.c - a.c;
+                case Direction.RIGHT: return a.c - b.c;
+                default: return 0;
+            }
+        });
+
         for (const cell of terrainHits) {
             if (cell.type === 1) { // Brick
                 const mask = this.map.brickMasks.get(`${cell.c},${cell.r}`) || 0;
                 if (mask > 0) {
-                    // Directional destruction: destroy only the half facing the bullet
-                    // Bits: TL=0b1000, TR=0b0100, BL=0b0010, BR=0b0001
-                    let destroyBits: number;
-                    switch (bullet.direction) {
-                        case Direction.UP:    destroyBits = 0b0011; break; // destroy bottom half
-                        case Direction.DOWN:  destroyBits = 0b1100; break; // destroy top half
-                        case Direction.LEFT:  destroyBits = 0b0101; break; // destroy right half
-                        case Direction.RIGHT: destroyBits = 0b1010; break; // destroy left half
-                        default:              destroyBits = 0b1111; break;
-                    }
-                    // Power-2 bullets destroy the entire brick
-                    if (bullet.power >= 2) destroyBits = 0b1111;
-                    const newMask = mask & ~destroyBits;
-
-                    if (newMask === 0) {
-                        this.map.terrain[cell.r][cell.c] = 0;
-                        this.map.brickMasks.delete(`${cell.c},${cell.r}`);
-                    } else {
-                        this.map.brickMasks.set(`${cell.c},${cell.r}`, newMask);
-                    }
+                    // One shot destroys the entire brick cell
+                    this.map.terrain[cell.r][cell.c] = 0;
+                    this.map.brickMasks.delete(`${cell.c},${cell.r}`);
                     this.gameManager.getParticleSystem().emitDebris(bullet.x + bullet.w / 2, bullet.y + bullet.h / 2, 8, '#c84');
                     this.gameManager.getSoundManager().playHitBrick();
                     bullet.isDead = true;
