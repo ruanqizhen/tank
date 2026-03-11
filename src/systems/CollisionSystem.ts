@@ -1,4 +1,4 @@
-import { AABB } from '../types';
+import { AABB, Direction } from '../types';
 import { GameManager } from '../engine/GameManager';
 import { MapTerrain } from '../world/Map';
 import { Tank } from '../entities/Tank';
@@ -78,23 +78,18 @@ export class CollisionSystem {
         const terrainHits = this.queryTerrain(targetBox);
         let blocking = false;
         for (const cell of terrainHits) {
-            if (cell.type === 1 || cell.type === 2 || cell.type === 6 || (cell.type === 4 && !tank.hasBoat)) {
+            if (cell.type === 1 || cell.type === 2 || cell.type === 6 || cell.type === 4) {
                 blocking = true;
                 break;
             }
         }
 
-        // Entity overlaps
+        // Entity overlaps — block movement but don't deal damage (damage is via bullets)
         if (!blocking) {
             const entityHits = this.queryEntities(targetBox);
             for (const entity of entityHits) {
                 if (entity !== tank) {
                     blocking = true;
-                    if (tank.faction !== entity.faction) {
-                        // Different factions hit each other! Both take damage.
-                        tank.applyDamage();
-                        entity.applyDamage();
-                    }
                     break;
                 }
             }
@@ -181,7 +176,7 @@ export class CollisionSystem {
             const terrainHits = this.queryTerrain(box);
 
             for (const cell of terrainHits) {
-                if (cell.type === 1 || cell.type === 2 || cell.type === 6 || (cell.type === 4 && !tank.hasBoat)) {
+                if (cell.type === 1 || cell.type === 2 || cell.type === 6 || cell.type === 4) {
                     const cellBox: AABB = {
                         x: cell.c * CELL_SIZE,
                         y: cell.r * CELL_SIZE,
@@ -259,7 +254,18 @@ export class CollisionSystem {
             if (cell.type === 1) { // Brick
                 const mask = this.map.brickMasks.get(`${cell.c},${cell.r}`) || 0;
                 if (mask > 0) {
-                    const destroyBits = 0b1111;
+                    // Directional destruction: destroy only the half facing the bullet
+                    // Bits: TL=0b1000, TR=0b0100, BL=0b0010, BR=0b0001
+                    let destroyBits: number;
+                    switch (bullet.direction) {
+                        case Direction.UP:    destroyBits = 0b0011; break; // destroy bottom half
+                        case Direction.DOWN:  destroyBits = 0b1100; break; // destroy top half
+                        case Direction.LEFT:  destroyBits = 0b0101; break; // destroy right half
+                        case Direction.RIGHT: destroyBits = 0b1010; break; // destroy left half
+                        default:              destroyBits = 0b1111; break;
+                    }
+                    // Power-2 bullets destroy the entire brick
+                    if (bullet.power >= 2) destroyBits = 0b1111;
                     const newMask = mask & ~destroyBits;
 
                     if (newMask === 0) {

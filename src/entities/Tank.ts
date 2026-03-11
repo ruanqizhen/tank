@@ -12,7 +12,7 @@ export abstract class Tank extends Entity {
 
     public hasShield: boolean = false;
     public shieldTimer: number = 0;
-    public hasBoat: boolean = false;
+
 
     public speed: number = 1.5;
     public iceSlideFrames: number = 0;
@@ -35,8 +35,8 @@ export abstract class Tank extends Entity {
     public shoot(): Bullet | null {
         if (this.currentCooldown > 0) return null;
 
-        const activeBullets = this.gameManager.getBulletsByOwner(this);
-        if (activeBullets.length >= this.maxBulletsOnScreen) return null;
+        const activeBullets = this.gameManager.getBulletCountByOwner(this);
+        if (activeBullets >= this.maxBulletsOnScreen) return null;
 
         this.currentCooldown = this.shootCooldown;
         const bullet = new Bullet(this.gameManager, this);

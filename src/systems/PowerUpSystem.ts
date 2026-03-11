@@ -103,6 +103,11 @@ export class PowerUpSystem {
 
         const pBox = { x: player.x, y: player.y, w: player.w, h: player.h };
 
+        // Query enemies once outside the loop (Opt 1)
+        const enemies = this.gameManager.getEntities().filter((e: any) =>
+            e.faction === TankFaction.ENEMY && !e.isDead && (e as any).hasSpawned !== false
+        );
+
         this.powerups.forEach(pu => {
             pu.update();
             if (!pu.isDead) {
@@ -113,9 +118,6 @@ export class PowerUpSystem {
                     return;
                 }
                 // Enemy pickup (reverse effects)
-                const enemies = this.gameManager.getEntities().filter((e: any) =>
-                    e.faction === TankFaction.ENEMY && !e.isDead && (e as any).hasSpawned !== false
-                );
                 for (const enemy of enemies) {
                     const eBox = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
                     if (this.gameManager.getCollisionSystem().isIntersecting(eBox, puBox)) {

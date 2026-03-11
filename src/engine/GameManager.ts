@@ -48,6 +48,7 @@ export class GameManager {
     private pauseReleased: boolean = true;
     private savedPlayerGrade: TankGrade = TankGrade.BASIC;
     private savedPlayerIsMax: boolean = false;
+    private respawnDelay: number = 0;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -142,6 +143,13 @@ export class GameManager {
     public getCollisionSystem() { return this.collisionSystem; }
     public getBullets() { return this.bullets; }
     public getBulletsByOwner(owner: Tank) { return this.bullets.filter(b => b.owner === owner); }
+    public getBulletCountByOwner(owner: Tank): number {
+        let count = 0;
+        for (const b of this.bullets) {
+            if (b.owner === owner && !b.isDead) count++;
+        }
+        return count;
+    }
     public addBullet(bullet: Bullet) { this.bullets.push(bullet); }
 
     public getEntities(): Tank[] { return [this.player, ...this.enemies]; }
@@ -170,7 +178,9 @@ export class GameManager {
         }
     }
 
-    public schedulePlayerRespawn() { this.player.respawn(); }
+    public schedulePlayerRespawn() {
+        this.respawnDelay = 60; // ~1 second at 60fps
+    }
 
     public resetGame() {
         this.currentStageIdx = 0;
@@ -194,6 +204,7 @@ export class GameManager {
         this.spawnSystem.loadLevelConfig(LEVELS[configIdx]);
         this.bullets = [];
         this.enemies = [];
+        this.respawnDelay = 0;
     }
 
     private switchState(newState: GameState) {
@@ -267,6 +278,14 @@ export class GameManager {
 
                 // Run Particle system
                 this.particleSystem.update(dt);
+
+                // Respawn timer
+                if (this.respawnDelay > 0) {
+                    this.respawnDelay--;
+                    if (this.respawnDelay <= 0) {
+                        this.player.respawn();
+                    }
+                }
 
                 // Check stage clear
                 if (this.spawnSystem.isFinished() && this.enemies.length === 0) {

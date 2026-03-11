@@ -91,9 +91,7 @@ export class PlayerTank extends Tank {
         this.gameManager.getParticleSystem().emitExplosion(this.x + this.w / 2, this.y + this.h / 2, 50, '#fa2');
 
         if (this.lives >= 0) {
-            setTimeout(() => {
-                this.gameManager.schedulePlayerRespawn();
-            }, 1000); // Wait 1s for explosion
+            this.gameManager.schedulePlayerRespawn();
         } else {
             this.gameManager.triggerGameOver();
         }
@@ -388,8 +386,7 @@ export class PlayerTank extends Tank {
 
         // 6. Execute Shooting
         if (wantsToShoot) {
-            const bullet = this.shoot();
-            if (bullet) this.gameManager.addBullet(bullet);
+            this.shoot();
         }
     }
 }
