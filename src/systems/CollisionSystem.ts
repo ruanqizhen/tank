@@ -83,12 +83,21 @@ export class CollisionSystem {
             }
         }
 
-        // Entity overlaps — block movement but don't deal damage (damage is via bullets)
+        // Entity overlaps — block movement and deal collision damage between opposing factions
         if (!blocking) {
             const entityHits = this.queryEntities(targetBox);
             for (const entity of entityHits) {
                 if (entity !== tank) {
                     blocking = true;
+                    // Collision damage between opposing factions (once per cooldown)
+                    if (entity.faction !== tank.faction) {
+                        const cd = (tank as any)._collisionDmgCd || 0;
+                        if (cd <= 0) {
+                            tank.applyDamage();
+                            entity.applyDamage();
+                            (tank as any)._collisionDmgCd = 60; // ~1 second cooldown
+                        }
+                    }
                     break;
                 }
             }

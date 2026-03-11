@@ -252,21 +252,33 @@ export class EnemyTank extends Tank {
         const player = this.gameManager.getPlayer();
         const powerUps = this.gameManager.getPowerUpSystem().getPowerUps().filter(p => !p.isDead);
 
-        // Priority 2: Power-ups on the map → go grab them
+        // Calculate distance to closest power-up
+        let closestPUDist = Infinity;
+        let closestPU: any = null;
         if (powerUps.length > 0) {
-            // Find the closest power-up by grid distance
-            let closestPU = powerUps[0];
-            let closestDist = Infinity;
             for (const pu of powerUps) {
                 const puCol = Math.round(pu.x / CELL_SIZE);
                 const puRow = Math.round(pu.y / CELL_SIZE);
                 const d = this.gridDistTo(puCol, puRow);
-                if (d < closestDist) {
-                    closestDist = d;
+                if (d < closestPUDist) {
+                    closestPUDist = d;
                     closestPU = pu;
                 }
             }
+        }
 
+        // Calculate distance to base
+        const baseCoords = this.gameManager.getMap().baseCoords;
+        let baseDist = Infinity;
+        for (const b of baseCoords) {
+            const d = this.gridDistTo(b.c, b.r);
+            if (d < baseDist) baseDist = d;
+        }
+
+        // Priority 2: Choose between power-up and base based on distance
+        const preferPowerUp = closestPU && closestPUDist < baseDist;
+
+        if (preferPowerUp) {
             const puCol = Math.round(closestPU.x / CELL_SIZE);
             const puRow = Math.round(closestPU.y / CELL_SIZE);
             const path = this.pathfinder.findPath(pos.col, pos.row, puCol, puRow, this.bulletPower);
@@ -276,7 +288,7 @@ export class EnemyTank extends Tank {
             }
         }
 
-        // Priority 3: Player nearby (within ~200px = 10 cells) → hunt them
+        // Priority 3: Player nearby (within ~12 cells) → hunt them
         if (player && !player.isDead) {
             const pCol = Math.round(player.x / CELL_SIZE);
             const pRow = Math.round(player.y / CELL_SIZE);
@@ -291,7 +303,25 @@ export class EnemyTank extends Tank {
             }
         }
 
-        // Priority 4: Default — attack the base via shortest route
+        // Priority 4: Attack base (or grab power-up if base was preferred but we got here)
+        if (!preferPowerUp && closestPU) {
+            // Base was preferred but let's try base first
+            const basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
+            if (basePath.length > 0) {
+                this.currentPath = basePath;
+                return;
+            }
+            // Fallback to power-up
+            const puCol = Math.round(closestPU.x / CELL_SIZE);
+            const puRow = Math.round(closestPU.y / CELL_SIZE);
+            const path = this.pathfinder.findPath(pos.col, pos.row, puCol, puRow, this.bulletPower);
+            if (path.length > 0) {
+                this.currentPath = path;
+                return;
+            }
+        }
+
+        // Default: attack the base
         const basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
         if (basePath.length > 0) {
             this.currentPath = basePath;

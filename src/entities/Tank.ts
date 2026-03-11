@@ -71,6 +71,10 @@ export abstract class Tank extends Entity {
                 this.hasShield = false;
             }
         }
+        // Collision damage cooldown
+        if ((this as any)._collisionDmgCd > 0) {
+            (this as any)._collisionDmgCd -= dt;
+        }
     }
 
     public render(ctx: CanvasRenderingContext2D): void {
