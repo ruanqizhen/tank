@@ -163,58 +163,65 @@ export class PlayerTank extends Tank {
         }
         this.wasLeftMouseDown = isLeftDown;
 
-        // 2. Keyboard movement
-        let intendedDirection = this.direction;
+        // 2. Keyboard movement — separate "turning" from "translating"
+        let rawDirection: Direction | null = null;  // What direction the user WANTS to face
         let wantsToMove = false;
 
         const aligned = this.isAlignedToGrid();
-        let pressedUp = action.up;
-        let pressedDown = action.down;
-        let pressedLeft = action.left;
-        let pressedRight = action.right;
 
-        if (pressedUp || pressedDown || pressedLeft || pressedRight) {
-            // User is pressing a key.
-            // If not aligned, we can only safely continue moving in the current axis.
-            if (!aligned) {
-                if (this.direction === Direction.UP || this.direction === Direction.DOWN) {
-                    pressedLeft = false;
-                    pressedRight = false;
-                    if (!pressedUp && !pressedDown) {
-                        pressedUp = this.direction === Direction.UP;
-                        pressedDown = this.direction === Direction.DOWN;
-                    }
+        if (action.up) { rawDirection = Direction.UP; wantsToMove = true; }
+        else if (action.down) { rawDirection = Direction.DOWN; wantsToMove = true; }
+        else if (action.left) { rawDirection = Direction.LEFT; wantsToMove = true; }
+        else if (action.right) { rawDirection = Direction.RIGHT; wantsToMove = true; }
+
+        // Clear drag states if keyboard is taking over
+        if (wantsToMove) {
+            this.isDragging = false;
+            this.isAutoShooting = false;
+            this.dragTarget = null;
+            this.dragOffset = null;
+        }
+
+        // The direction that the tank will actually TRANSLATE towards
+        let moveDirection = this.direction;
+        let justTurned = false;
+
+        // Decrement turn delay timer
+        if ((this as any)._turnDelayTimer > 0) {
+            (this as any)._turnDelayTimer -= dt;
+        }
+
+        // STEP A: Handle turning and movement delay
+        if (rawDirection !== null) {
+            if (rawDirection !== this.direction) {
+                this.direction = rawDirection;
+                // Set an 8 frame delay (~133ms) before movement is allowed, making the turn perceptible
+                (this as any)._turnDelayTimer = 8; 
+                wantsToMove = false;
+                justTurned = true;
+            } else {
+                // Direction matches. Check if we are still in the turn delay period
+                if ((this as any)._turnDelayTimer > 0) {
+                    wantsToMove = false;
+                    justTurned = true; // Still treating as "turning" to prevent grid-snap slipping
                 } else {
-                    pressedUp = false;
-                    pressedDown = false;
-                    if (!pressedLeft && !pressedRight) {
-                        pressedLeft = this.direction === Direction.LEFT;
-                        pressedRight = this.direction === Direction.RIGHT;
-                    }
+                    // Turn delay finished, user wants to move forward
+                    moveDirection = rawDirection;
                 }
             }
-
-            if (pressedUp) { intendedDirection = Direction.UP; wantsToMove = true; }
-            else if (pressedDown) { intendedDirection = Direction.DOWN; wantsToMove = true; }
-            else if (pressedLeft) { intendedDirection = Direction.LEFT; wantsToMove = true; }
-            else if (pressedRight) { intendedDirection = Direction.RIGHT; wantsToMove = true; }
-
-            // Clear drag states if keyboard is taking over
-            if (wantsToMove && (action.up || action.down || action.left || action.right)) {
-                this.isDragging = false;
-                this.isAutoShooting = false;
-                this.dragTarget = null;
-                this.dragOffset = null;
-            }
+        } else {
+            // Reset delay instantly if user releases all keys
+            (this as any)._turnDelayTimer = 0;
         }
+
         let wantsToShoot = action.shoot;
+
         // 3. Mouse Drag Movement
-        if (!wantsToMove && this.isDragging && this.dragTarget) {
+        if (!wantsToMove && !justTurned && this.isDragging && this.dragTarget) {
             const cx = this.x + this.w / 2;
             const cy = this.y + this.h / 2;
             const deltaX = this.dragTarget.x - cx;
             const deltaY = this.dragTarget.y - cy;
-            // Move if dragged outside reaching distance (use a 5px threshold for stability to avoid shaking)
             if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
                 let rawDragDir = this.direction;
                 if (Math.abs(deltaX) > Math.abs(deltaY)) {
@@ -224,14 +231,12 @@ export class PlayerTank extends Tank {
                 }
 
                 if (!aligned) {
-                    // Must finish moving along current axis before turning
-                    intendedDirection = this.direction;
+                    moveDirection = this.direction;
                 } else {
-                    intendedDirection = rawDragDir;
+                    moveDirection = rawDragDir;
                 }
                 wantsToMove = true;
             } else {
-                // Reached target
                 if (!inputSystem.isLeftClickHeld()) {
                     this.isDragging = false;
                     this.dragTarget = null;
@@ -240,9 +245,9 @@ export class PlayerTank extends Tank {
         }
 
         // 3.5 Auto-align if no input and NOT actively holding a drag position
-        if (!wantsToMove && !this.isDragging) {
+        // Skip this on turn frames to prevent movement on the same frame as a turn
+        if (!wantsToMove && !justTurned && !this.isDragging) {
             if (!aligned) {
-                // Force movement to finish snapping
                 wantsToMove = true;
 
                 const mx = Math.abs(this.x % CELL_SIZE);
@@ -251,18 +256,17 @@ export class PlayerTank extends Tank {
                 const alignedY = my < 0.1 || my > CELL_SIZE - 0.1;
 
                 if (!alignedX && !alignedY) {
-                    intendedDirection = this.direction;
+                    moveDirection = this.direction;
                 } else if (!alignedX) {
-                    intendedDirection = (this.direction === Direction.LEFT || this.direction === Direction.RIGHT)
+                    moveDirection = (this.direction === Direction.LEFT || this.direction === Direction.RIGHT)
                         ? this.direction
                         : (mx < CELL_SIZE / 2 ? Direction.LEFT : Direction.RIGHT);
                 } else if (!alignedY) {
-                    intendedDirection = (this.direction === Direction.UP || this.direction === Direction.DOWN)
+                    moveDirection = (this.direction === Direction.UP || this.direction === Direction.DOWN)
                         ? this.direction
                         : (my < CELL_SIZE / 2 ? Direction.UP : Direction.DOWN);
                 }
             } else {
-                // Precautionary exact snapping to avoid drift over time
                 this.snapToGrid();
             }
         }
@@ -277,7 +281,6 @@ export class PlayerTank extends Tank {
             const deltaY = my - cy;
 
             let targetDir = this.direction;
-            // Add a small deadzone for turning to avoid jitter, though generally fine
             if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
                 if (Math.abs(deltaX) > Math.abs(deltaY)) {
                     targetDir = deltaX > 0 ? Direction.RIGHT : Direction.LEFT;
@@ -287,26 +290,22 @@ export class PlayerTank extends Tank {
             }
 
             if (this.direction !== targetDir) {
-                // If not facing the click, rotate the tank chassis first. No shooting this frame.
                 this.direction = targetDir;
             } else {
-                // We are locked onto the target direction. Proceed to shoot.
                 wantsToShoot = true;
             }
         }
 
         if (wantsToMove) {
-            // Usually, tank must face the way it drives. But if auto-shooting, it can "slide" sideways
-            if (!this.isAutoShooting && this.direction !== intendedDirection) {
-                // Turn chassis to face travel direction. Consumes 1 frame (no movement).
-                this.direction = intendedDirection;
+            if (!this.isAutoShooting && this.direction !== moveDirection) {
+                // Need to face the movement direction first (e.g. auto-align snap)
+                this.direction = moveDirection;
             } else {
-                // We are either properly aligned OR sliding sideways to shoot!
                 isMoving = true;
-                if (intendedDirection === Direction.UP) dy = -this.speed;
-                else if (intendedDirection === Direction.DOWN) dy = this.speed;
-                else if (intendedDirection === Direction.LEFT) dx = -this.speed;
-                else if (intendedDirection === Direction.RIGHT) dx = this.speed;
+                if (moveDirection === Direction.UP) dy = -this.speed;
+                else if (moveDirection === Direction.DOWN) dy = this.speed;
+                else if (moveDirection === Direction.LEFT) dx = -this.speed;
+                else if (moveDirection === Direction.RIGHT) dx = this.speed;
             }
         }
 
