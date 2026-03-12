@@ -49,6 +49,7 @@ export class GameManager {
     private savedPlayerGrade: TankGrade = TankGrade.BASIC;
     private savedPlayerIsMax: boolean = false;
     private respawnDelay: number = 0;
+    private gameOverSelection: number = 0; // 0: Continue, 1: Back to Menu
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -162,6 +163,7 @@ export class GameManager {
     public triggerGameOver() {
         this.switchState(GameState.GAME_OVER);
         this.soundManager.playGameOver();
+        this.gameOverSelection = 0; // Default to 'Continue'
         const startBtn = document.getElementById('start-btn');
         if (startBtn) startBtn.innerText = '重新开始';
     }
@@ -186,6 +188,14 @@ export class GameManager {
         this.currentStageIdx = 0;
         this.savedPlayerGrade = TankGrade.BASIC;
         this.savedPlayerIsMax = false;
+        this.initLevel();
+    }
+
+    public restartCurrentLevel() {
+        this.initLevel();
+    }
+
+    private initLevel() {
         this.map = new MapTerrain();
 
         // Cycle maps after level 20, but difficulty keeps increasing/capping
@@ -200,6 +210,8 @@ export class GameManager {
         this.particleSystem = new ParticleSystem(this);
 
         this.player = new PlayerTank(this);
+        // If restarting level, we go back to basic
+        this.player.respawn();
 
         this.spawnSystem.loadLevelConfig(LEVELS[configIdx]);
         this.bullets = [];
@@ -305,10 +317,57 @@ export class GameManager {
                 break;
 
             case GameState.GAME_OVER:
-                if (this.stateTimer > 180) { // 3 seconds
+                if (this.stateTimer > 60) { // Allow input after 1 second
+                    const mousePos = this.inputManager.getMouseLogicalPos();
+                    const options = ['继续游戏', '返回主页'];
+                    const startY = 400 + 60; // CH/2 + 60
+                    const CW = 600;
+
+                    // Mouse Hover Detection
+                    let hoveredIdx = -1;
+                    options.forEach((_, idx) => {
+                        const y = startY + idx * 50;
+                        const rect = {
+                            x: CW / 2 - 100,
+                            y: y - 25,
+                            w: 200,
+                            h: 40
+                        };
+                        if (mousePos.x >= rect.x && mousePos.x <= rect.x + rect.w &&
+                            mousePos.y >= rect.y && mousePos.y <= rect.y + rect.h) {
+                            hoveredIdx = idx;
+                        }
+                    });
+
+                    if (hoveredIdx !== -1) {
+                        this.gameOverSelection = hoveredIdx;
+                        this.canvas.style.cursor = 'pointer';
+                    } else {
+                        this.canvas.style.cursor = 'default';
+                    }
+
+                    // Keyboard Navigation
+                    const canNav = Math.floor(this.stateTimer) % 10 === 0;
+                    if (canNav) {
+                        if (action.up) {
+                            this.gameOverSelection = 0;
+                        } else if (action.down) {
+                            this.gameOverSelection = 1;
+                        }
+                    }
+
                     if (isConfirm) {
-                        this.confirmReleased = false;
-                        this.switchState(GameState.MAIN_MENU);
+                        // If it's a mouse click, only confirm if we are hovering a valid button
+                        const isMouseClick = this.inputManager.isLeftClickHeld();
+                        if (!isMouseClick || hoveredIdx !== -1) {
+                            this.confirmReleased = false;
+                            if (this.gameOverSelection === 0) {
+                                this.restartCurrentLevel();
+                                this.switchState(GameState.STAGE_INTRO);
+                            } else {
+                                this.switchState(GameState.MAIN_MENU);
+                            }
+                        }
                     }
                 }
                 break;
@@ -445,17 +504,44 @@ export class GameManager {
                 this.ctx.fillStyle = '#ff3366';
                 this.ctx.textAlign = 'center';
                 this.ctx.font = 'bold 42px "Orbitron", "Noto Sans SC", sans-serif';
-                this.ctx.fillText('游戏结束', CW / 2, CH / 2 - 20);
+                this.ctx.fillText('游戏结束', CW / 2, CH / 2 - 80);
                 this.ctx.shadowBlur = 0;
 
-                this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                this.ctx.font = '16px "Noto Sans SC", sans-serif';
-                this.ctx.fillText(`最终分数: ${this.player.score}`, CW / 2, CH / 2 + 30);
+                this.ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                this.ctx.font = '18px "Noto Sans SC", sans-serif';
+                this.ctx.fillText(`最终分数: ${this.player.score}`, CW / 2, CH / 2 - 20);
 
-                if (this.stateTimer > 60 && Math.floor(this.stateTimer / 30) % 2 === 0) {
-                    this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                // Draw Options
+                const options = ['继续游戏', '返回主页'];
+                const startY = CH / 2 + 60;
+                
+                options.forEach((opt, idx) => {
+                    const isSelected = this.gameOverSelection === idx;
+                    const y = startY + idx * 50;
+
+                    if (isSelected) {
+                        // Highlight bar
+                        this.ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                        this.ctx.fillRect(CW / 2 - 100, y - 25, 200, 40);
+                        this.ctx.strokeStyle = '#ff3366';
+                        this.ctx.strokeRect(CW / 2 - 100, y - 25, 200, 40);
+
+                        // Arrow
+                        this.ctx.fillStyle = '#ff3366';
+                        this.ctx.fillText('►', CW / 2 - 80, y + 6);
+                        this.ctx.fillStyle = '#fff';
+                    } else {
+                        this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                    }
+
+                    this.ctx.font = isSelected ? 'bold 20px "Noto Sans SC", sans-serif' : '18px "Noto Sans SC", sans-serif';
+                    this.ctx.fillText(opt, CW / 2, y + 6);
+                });
+
+                if (this.stateTimer > 90 && Math.floor(this.stateTimer / 30) % 2 === 0) {
+                    this.ctx.fillStyle = 'rgba(255,255,255,0.3)';
                     this.ctx.font = '14px "Noto Sans SC", sans-serif';
-                    this.ctx.fillText('点击鼠标或空格键返回', CW / 2, CH / 2 + 80);
+                    this.ctx.fillText('使用方向键选择，空格确认', CW / 2, CH - 50);
                 }
                 break;
             }
