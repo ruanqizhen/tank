@@ -144,9 +144,18 @@ canvas {
 }
 
 .tank-icon {
-  font-size: 3rem;
   margin-bottom: 8px;
   animation: float 3s ease-in-out infinite;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.main-tank-img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 15px var(--primary));
 }
 
 @keyframes float {

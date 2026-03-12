@@ -1,7 +1,7 @@
 import { Tank } from './Tank';
 import { TankGrade, TankFaction, Direction, EnemyBehavior } from '../types';
 import { GameManager } from '../engine/GameManager';
-import { CELL_SIZE } from '../constants';
+import { CELL_SIZE, GRID_COLS, GRID_ROWS } from '../constants';
 import { AStarPathfinder } from '../systems/AStarPathfinder';
 
 export class EnemyTank extends Tank {
@@ -188,6 +188,28 @@ export class EnemyTank extends Tank {
     private gridDistTo(col: number, row: number): number {
         const pos = this.getGridPos();
         return Math.abs(pos.col - col) + Math.abs(pos.row - row);
+    }
+
+    private isBlockedByPlayer(): boolean {
+        const player = this.gameManager.getPlayer();
+        if (!player || player.isDead) return false;
+
+        // Small margin to check just in front of the tank
+        const margin = 4;
+        const checkArea = {
+            x: this.x,
+            y: this.y,
+            w: this.w,
+            h: this.h
+        };
+
+        if (this.direction === Direction.UP) checkArea.y -= margin;
+        else if (this.direction === Direction.DOWN) checkArea.y += margin;
+        else if (this.direction === Direction.LEFT) checkArea.x -= margin;
+        else if (this.direction === Direction.RIGHT) checkArea.x += margin;
+
+        const playerBox = { x: player.x, y: player.y, w: player.w, h: player.h };
+        return this.gameManager.getCollisionSystem().isIntersecting(checkArea, playerBox);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -464,7 +486,13 @@ export class EnemyTank extends Tank {
         const res = this.gameManager.getCollisionSystem().resolveMovement(this, dx, dy);
 
         if ((dx !== 0 && res.dx === 0) || (dy !== 0 && res.dy === 0)) {
-            this.stuckFrames++;
+            // If blocked by player, don't increment stuckFrames (stay and fight)
+            if (this.isBlockedByPlayer()) {
+                this.shoot();
+                this.stuckFrames = 0;
+            } else {
+                this.stuckFrames++;
+            }
         } else {
             this.stuckFrames = 0;
         }
@@ -483,14 +511,17 @@ export class EnemyTank extends Tank {
         const col = Math.floor((this.x + this.w / 2) / CELL_SIZE);
         const row = Math.floor((this.y + this.h / 2) / CELL_SIZE);
 
-        // Scan ahead up to 8 cells
-        for (let step = 1; step <= 8; step++) {
+        // Scan ahead until map boundary
+        for (let step = 1; step <= 40; step++) {
             let checkR = row, checkC = col;
             if (this.direction === Direction.UP) checkR = row - step;
             else if (this.direction === Direction.DOWN) checkR = row + step;
             else if (this.direction === Direction.LEFT) checkC = col - step;
             else if (this.direction === Direction.RIGHT) checkC = col + step;
 
+            // Boundary check: if we've gone off the map, stop scanning
+            if (checkR < 0 || checkR >= GRID_ROWS || checkC < 0 || checkC >= GRID_COLS) break;
+            
             const type = map.getTerrainType(checkR, checkC);
 
             // Base ahead — FIRE IMMEDIATELY
@@ -504,7 +535,12 @@ export class EnemyTank extends Tank {
             if (player && !player.isDead) {
                 const pCol = Math.floor((player.x + player.w / 2) / CELL_SIZE);
                 const pRow = Math.floor((player.y + player.h / 2) / CELL_SIZE);
-                if (checkR === pRow && checkC === pCol) {
+                
+                // Detection for 2x2 player tank
+                const isPlayerAtCell = (checkR === pRow || checkR === pRow + 1) && 
+                                       (checkC === pCol || checkC === pCol + 1);
+
+                if (isPlayerAtCell) {
                     this.shoot();
                     return;
                 }
@@ -512,8 +548,10 @@ export class EnemyTank extends Tank {
 
             // Wall ahead — shoot if it's on our path and destructible
             if (type === 1 || (type === 2 && this.bulletPower >= 2)) {
-                // Only shoot with some probability if it's far away
-                if (step <= 3 || Math.random() < 0.1) {
+                // If it's a wall and we are close, we still clear it.
+                // For long distance walls, we don't necessarily want to spray bricks constantly
+                // unless it's within a reasonable range (like the old 8 cells) or we are on a path.
+                if (step <= 8 || Math.random() < 0.05) {
                     this.shoot();
                 }
                 return;
@@ -530,7 +568,23 @@ export class EnemyTank extends Tank {
 
     private recoverFromStuck() {
         this.snapToGrid();
-        this.shoot(); // Try to blast through
+
+        // If player is nearby or in LoS, don't turn away, just face them and shoot
+        const losDir = this.getLineOfSightDirection();
+        if (losDir !== null) {
+            this.direction = losDir;
+            this.shoot();
+            this.stuckFrames = 0;
+            return;
+        }
+
+        if (this.isBlockedByPlayer()) {
+            this.shoot();
+            this.stuckFrames = 0;
+            return;
+        }
+
+        this.shoot(); // Try to blast through whatever is in front
 
         const passable = this.getPassableDirections();
         const choices = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
