@@ -1,7 +1,7 @@
 import { Tank } from './Tank';
 import { TankGrade, TankFaction, Direction, EnemyBehavior } from '../types';
 import { GameManager } from '../engine/GameManager';
-import { CELL_SIZE, GRID_COLS, GRID_ROWS } from '../constants';
+import { CELL_SIZE, GRID_COLS, GRID_ROWS, BATTLE_AREA_X, BATTLE_AREA_Y } from '../constants';
 import { AStarPathfinder } from '../systems/AStarPathfinder';
 
 export class EnemyTank extends Tank {
@@ -625,11 +625,30 @@ export class EnemyTank extends Tank {
             else color = '#aaaaaa';
         }
 
-        if (this.holdsPowerUp && Math.floor(Date.now() / 150) % 2 === 0) {
-            color = '#f0f';
-        }
-
         this.colorOverride = color;
         super.render(ctx);
+
+        // Draw blinking red light on turret for power-up carriers
+        if (this.holdsPowerUp && Math.floor(Date.now() / 250) % 2 === 0) {
+            // Adjust to the battle area coordinate system used in super.render
+            const drawX = this.x + BATTLE_AREA_X + this.w / 2;
+            const drawY = this.y + BATTLE_AREA_Y + this.h / 2;
+
+            ctx.save();
+            ctx.beginPath();
+            // Center the light exactly in the middle of the turret
+            ctx.arc(drawX, drawY, 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#f22';
+            ctx.shadowColor = '#f00';
+            ctx.shadowBlur = 8;
+            ctx.fill();
+            
+            // Small white highlight core
+            ctx.beginPath();
+            ctx.arc(drawX, drawY, 1, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.restore();
+        }
     }
 }
