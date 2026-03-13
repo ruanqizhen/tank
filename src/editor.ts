@@ -109,34 +109,45 @@ class MapEditor {
         });
 
         const loadBtn = document.getElementById('load-btn');
-        const modal = document.getElementById('load-modal');
-        const levelInput = document.getElementById('level-input') as HTMLTextAreaElement;
-        const confirmBtn = document.getElementById('confirm-load');
-        const cancelBtn = document.getElementById('cancel-load');
 
-        loadBtn?.addEventListener('click', () => {
-            modal?.classList.remove('hidden');
-        });
-
-        cancelBtn?.addEventListener('click', () => {
-            modal?.classList.add('hidden');
-        });
-
-        confirmBtn?.addEventListener('click', () => {
-            const lines = levelInput.value.trim().split('\n');
-            if (lines.length === GRID_ROWS) {
-                for (let r = 0; r < GRID_ROWS; r++) {
-                    const chars = lines[r].trim().split('');
-                    if (chars.length === GRID_COLS) {
-                        for (let c = 0; c < GRID_COLS; c++) {
-                            this.terrain[r][c] = parseInt(chars[c]) || 0;
+        loadBtn?.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                const lines = text.trim().split('\n');
+                
+                if (lines.length === GRID_ROWS) {
+                    let valid = true;
+                    const newTerrain = [];
+                    for (let r = 0; r < GRID_ROWS; r++) {
+                        const chars = lines[r].trim().split('');
+                        if (chars.length === GRID_COLS) {
+                            newTerrain[r] = chars.map(c => parseInt(c) || 0);
+                        } else {
+                            valid = false;
+                            break;
                         }
                     }
+
+                    if (valid) {
+                        this.terrain = newTerrain;
+                        this.render();
+                        
+                        const originalText = loadBtn.innerText;
+                        loadBtn.innerText = '已加载!';
+                        loadBtn.style.color = '#0f0';
+                        setTimeout(() => {
+                            loadBtn.innerText = originalText;
+                            loadBtn.style.color = '';
+                        }, 1000);
+                    } else {
+                        alert(`数据格式错误！每一行必须包含 ${GRID_COLS} 个数字。`);
+                    }
+                } else {
+                    alert(`无效的地图数据！需要 ${GRID_ROWS} 行，当前为 ${lines.length} 行。`);
                 }
-                this.render();
-                modal?.classList.add('hidden');
-            } else {
-                alert(`无效的地图数据！需要 ${GRID_ROWS} 行，当前为 ${lines.length} 行。`);
+            } catch (err) {
+                console.error('Failed to read clipboard:', err);
+                alert('无法读取剪贴板，请确保已授予权限。');
             }
         });
     }
