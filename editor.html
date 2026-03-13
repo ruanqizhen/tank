@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地图编辑器 - 坦克大战</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/editor.css">
+</head>
+<body>
+    <div class="ambient-glow"></div>
+    <div id="editor-container">
+        <header>
+            <div class="logo-section">
+                <h1>地图编辑器</h1>
+                <p>设计你的战地关卡</p>
+            </div>
+            <div class="header-actions">
+                <button id="load-btn" class="secondary-btn">加载关卡</button>
+                <button id="copy-btn" class="primary-btn">复制数据</button>
+                <a href="/" class="back-link">返回游戏</a>
+            </div>
+        </header>
+
+        <main>
+            <div class="grid-section">
+                <canvas id="editorCanvas" width="600" height="760"></canvas>
+            </div>
+            
+            <aside class="palette-section">
+                <h3>选择地形</h3>
+                <div class="palette-grid">
+                    <button class="palette-item active" data-type="1" title="砖墙">
+                        <div class="icon brick"></div>
+                        <span>砖墙</span>
+                    </button>
+                    <button class="palette-item" data-type="2" title="钢墙">
+                        <div class="icon steel"></div>
+                        <span>钢墙</span>
+                    </button>
+                    <button class="palette-item" data-type="3" title="森林">
+                        <div class="icon forest"></div>
+                        <span>森林</span>
+                    </button>
+                    <button class="palette-item" data-type="4" title="水面">
+                        <div class="icon water"></div>
+                        <span>水面</span>
+                    </button>
+                    <button class="palette-item" data-type="5" title="冰面">
+                        <div class="icon ice"></div>
+                        <span>冰面</span>
+                    </button>
+                    <button class="palette-item" data-type="6" title="基地">
+                        <div class="icon base"></div>
+                        <span>基地</span>
+                    </button>
+                    <button class="palette-item" data-type="0" title="清空">
+                        <div class="icon empty"></div>
+                        <span>擦除</span>
+                    </button>
+                </div>
+                
+                <div class="editor-info">
+                    <p>提示：左键点击或拖拽进行批量绘画。</p>
+                    <p>基地 (6) 必须为 2x2 区域。</p>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- Load Level Modal -->
+    <div id="load-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>加载关卡数据</h3>
+            <textarea id="level-input" placeholder="请在此处粘贴 30x38 的数字矩阵数据..."></textarea>
+            <div class="modal-actions">
+                <button id="cancel-load">取消</button>
+                <button id="confirm-load" class="primary-btn">加载</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/editor.ts"></script>
+</body>
+</html>
