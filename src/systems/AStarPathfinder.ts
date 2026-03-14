@@ -97,21 +97,21 @@ export class AStarPathfinder {
 
         const startNode: AStarNode = { x: startCol, y: startRow, g: 0, h: 0, f: 0, parent: null };
 
-        if (!this.isPassableForTank(endCol, endRow, bulletPower)) {
-            // Try to get as close as possible by finding a neighbor that is passable
-            // This handles the case where the target is inside a wall
-            return [];
-        }
+        // Even if end is not passable, we try to get as close as possible
+        // So we don't return early here unless start is out of bounds (shouldn't happen)
 
         const openSet: AStarNode[] = [startNode];
         const closedSet: Set<string> = new Set();
-        const maxIterations = 800; // Safety cap for large maps
+        
+        let closestNode: AStarNode = startNode;
+        let minH = this.heuristic(startCol, startRow, endCol, endRow);
+
+        const maxIterations = 1200; // Increased for complex mazes
         let iterations = 0;
 
         while (openSet.length > 0 && iterations < maxIterations) {
             iterations++;
 
-            // Find the node with the lowest f
             let bestIdx = 0;
             for (let i = 1; i < openSet.length; i++) {
                 if (openSet[i].f < openSet[bestIdx].f) {
@@ -125,6 +125,13 @@ export class AStarPathfinder {
             if (closedSet.has(key)) continue;
             closedSet.add(key);
 
+            // Track closest node to target
+            const dH = this.heuristic(current.x, current.y, endCol, endRow);
+            if (dH < minH) {
+                minH = dH;
+                closestNode = current;
+            }
+
             // Goal check
             if (current.x === endCol && current.y === endRow) {
                 return this.reconstructPath(current);
@@ -136,7 +143,7 @@ export class AStarPathfinder {
 
                 const moveCost = this.getTankMoveCost(neighbor.x, neighbor.y, bulletPower);
                 const g = current.g + moveCost;
-                const h = this.heuristic(neighbor.x, neighbor.y, endCol, endRow);
+                const h = dH; // optimization: use dH from above
                 const f = g + h;
 
                 const existing = openSet.find(n => n.x === neighbor.x && n.y === neighbor.y);
@@ -153,7 +160,12 @@ export class AStarPathfinder {
             }
         }
 
-        return []; // No path found
+        // If no goal found, return path to closest reachable node
+        if (closestNode !== startNode) {
+            return this.reconstructPath(closestNode);
+        }
+
+        return []; 
     }
 
     private reconstructPath(node: AStarNode): Direction[] {

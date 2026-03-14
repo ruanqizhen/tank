@@ -237,47 +237,69 @@ export class EnemyTank extends Tank {
 
     private getLineOfSightDirection(): Direction | null {
         const player = this.gameManager.getPlayer();
-        if (!player || player.isDead) return null;
-
         const map = this.gameManager.getMap();
         const col = Math.round(this.x / CELL_SIZE);
         const row = Math.round(this.y / CELL_SIZE);
-        const pCol = Math.round(player.x / CELL_SIZE);
-        const pRow = Math.round(player.y / CELL_SIZE);
 
-        // Same column — check vertical line of sight
-        if (col === pCol) {
-            const minR = Math.min(row, pRow);
-            const maxR = Math.max(row, pRow);
-            let blocked = false;
-            for (let r = minR; r <= maxR; r++) {
-                const t1 = map.getTerrainType(r, col);
-                const t2 = map.getTerrainType(r, col + 1);
-                if ([1, 2, 6].includes(t1) || [1, 2, 6].includes(t2)) {
-                    blocked = true;
-                    break;
+        // 1. Check for Base (Eagle) in LoS - High Priority
+        for (const base of map.baseCoords) {
+            // Same column
+            if (col === base.c || col === base.c - 1) { // 2x2 tank footprint
+                const minR = Math.min(row, base.r);
+                const maxR = Math.max(row, base.r);
+                let blocked = false;
+                for (let r = minR + 1; r < maxR; r++) {
+                    const t = map.getTerrainType(r, col);
+                    if (t === 2) { blocked = true; break; } // Only steel blocks LoS to base
                 }
+                if (!blocked) return (base.r < row) ? Direction.UP : Direction.DOWN;
             }
-            if (!blocked) {
-                return (player.y < this.y) ? Direction.UP : Direction.DOWN;
+            // Same row
+            if (row === base.r || row === base.r - 1) {
+                const minC = Math.min(col, base.c);
+                const maxC = Math.max(col, base.c);
+                let blocked = false;
+                for (let c = minC + 1; c < maxC; c++) {
+                    const t = map.getTerrainType(row, c);
+                    if (t === 2) { blocked = true; break; }
+                }
+                if (!blocked) return (base.c < col) ? Direction.LEFT : Direction.RIGHT;
             }
         }
 
-        // Same row — check horizontal line of sight
-        if (row === pRow) {
-            const minC = Math.min(col, pCol);
-            const maxC = Math.max(col, pCol);
-            let blocked = false;
-            for (let c = minC; c <= maxC; c++) {
-                const t1 = map.getTerrainType(row, c);
-                const t2 = map.getTerrainType(row + 1, c);
-                if ([1, 2, 6].includes(t1) || [1, 2, 6].includes(t2)) {
-                    blocked = true;
-                    break;
+        // 2. Check for Player in LoS
+        if (player && !player.isDead) {
+            const pCol = Math.round(player.x / CELL_SIZE);
+            const pRow = Math.round(player.y / CELL_SIZE);
+
+            if (col === pCol) {
+                const minR = Math.min(row, pRow);
+                const maxR = Math.max(row, pRow);
+                let blocked = false;
+                for (let r = minR; r <= maxR; r++) {
+                    const t1 = map.getTerrainType(r, col);
+                    const t2 = map.getTerrainType(r, col + 1);
+                    if ([1, 2, 6].includes(t1) || [1, 2, 6].includes(t2)) {
+                        blocked = true;
+                        break;
+                    }
                 }
+                if (!blocked) return (player.y < this.y) ? Direction.UP : Direction.DOWN;
             }
-            if (!blocked) {
-                return (player.x < this.x) ? Direction.LEFT : Direction.RIGHT;
+
+            if (row === pRow) {
+                const minC = Math.min(col, pCol);
+                const maxC = Math.max(col, pCol);
+                let blocked = false;
+                for (let c = minC; c <= maxC; c++) {
+                    const t1 = map.getTerrainType(row, c);
+                    const t2 = map.getTerrainType(row + 1, c);
+                    if ([1, 2, 6].includes(t1) || [1, 2, 6].includes(t2)) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (!blocked) return (player.x < this.x) ? Direction.LEFT : Direction.RIGHT;
             }
         }
 
@@ -402,8 +424,8 @@ export class EnemyTank extends Tank {
         this.lastX = this.x;
         this.lastY = this.y;
 
-        // Emergency recovery
-        if (this.stuckFrames > 30 || this.positionQuietFrames > 45) {
+        // Emergency recovery: much faster trigger
+        if (this.stuckFrames > 25 || this.positionQuietFrames > 35) {
             this.recoverFromStuck();
             return;
         }
@@ -411,37 +433,34 @@ export class EnemyTank extends Tank {
         const aligned = this.isAlignedToGrid();
         if (aligned) this.snapToGrid();
 
-        // ── Priority 1: Line-of-sight to player → SHOOT ──
+        // ── Priority 1: Line-of-sight to player or base → SHOOT ──
         const losDir = this.getLineOfSightDirection();
         if (losDir !== null) {
             if (this.direction === losDir) {
-                // Already facing — fire!
                 this.shoot();
-            } else if (aligned) {
-                // Turn to face the player
+            } else if (aligned || Math.random() < 0.2) {
+                // More aggressive turning toward target in LoS
                 this.direction = losDir;
                 this.stuckFrames = 0;
+                this.currentPath = []; // Refresh path since we turned
             }
-            // Still proceed to move (can shoot AND move)
         }
 
         // ── Refresh pathfinding periodically ──
         if (aligned) {
             this.pathRefreshTimer--;
             if (this.pathRefreshTimer <= 0 || this.currentPath.length === 0) {
-                this.pathRefreshTimer = 45 + Math.floor(Math.random() * 15);
+                this.pathRefreshTimer = 30 + Math.floor(Math.random() * 20); // More frequent updates
                 this.selectTargetAndPath();
             }
         }
 
-        // ── Crowding avoidance: detour if overlapping another enemy ──
+        // ── Crowding avoidance ──
         if (aligned) {
             const crowdingEnemy = this.getOverlappingEnemy();
             if (crowdingEnemy) {
-                // The tank that has been stuck longer should reroute
                 if (this.stuckFrames >= (crowdingEnemy as any).stuckFrames) {
                     const passable = this.getPassableDirections();
-                    // Prefer perpendicular directions
                     const perpDirs = passable.filter(d =>
                         d !== this.direction && d !== this.getOpposite(this.direction)
                     );
@@ -449,7 +468,7 @@ export class EnemyTank extends Tank {
                     if (choices.length > 0) {
                         this.direction = choices[Math.floor(Math.random() * choices.length)];
                         this.currentPath = [];
-                        this.pathRefreshTimer = 15;
+                        this.pathRefreshTimer = 10;
                         this.stuckFrames = 0;
                     }
                 }
@@ -461,7 +480,6 @@ export class EnemyTank extends Tank {
             const nextDir = this.currentPath[0];
 
             if (this.canMoveInDirection(nextDir)) {
-                // Path is clear — go
                 if (this.direction !== nextDir) {
                     this.direction = nextDir;
                 }
@@ -471,16 +489,14 @@ export class EnemyTank extends Tank {
                 // Path is blocked — is it destructible?
                 const pos = this.getGridPos();
                 if (this.pathfinder.isDestructibleAhead(pos.col, pos.row, nextDir, this.bulletPower)) {
-                    // Face the obstacle and shoot to clear
                     if (this.direction !== nextDir) {
                         this.direction = nextDir;
                     }
                     this.shoot();
                     this.stuckFrames++;
                 } else {
-                    // Truly impassable — recalculate path
                     this.currentPath = [];
-                    this.pathRefreshTimer = 0; // Force immediate refresh
+                    this.pathRefreshTimer = 0; 
                 }
             }
         }
@@ -488,8 +504,9 @@ export class EnemyTank extends Tank {
         // ── Execute movement ──
         this.executeMovement();
 
-        // ── Shoot at base/walls that are ahead ──
-        if (aligned) {
+        // ── Shoot at base/walls/player - UNCOUPLED from alignment ──
+        // Only run every few frames for performance, but much faster than waiting for grid snap
+        if (Math.floor(Date.now() / 16) % 5 === 0) {
             this.handleOpportunisticShooting();
         }
     }
@@ -511,19 +528,18 @@ export class EnemyTank extends Tank {
 
         const res = this.gameManager.getCollisionSystem().resolveMovement(this, dx, dy);
 
+        // If we intended to move but were blocked
         if ((dx !== 0 && res.dx === 0) || (dy !== 0 && res.dy === 0)) {
             // Priority: Shoot if blocked by base or player
-            if (this.isBlockedByBase()) {
+            if (this.isBlockedByBase() || this.isBlockedByPlayer()) {
                 this.shoot();
-                this.stuckFrames = 0; // Stay and keep firing at the base
-            } else if (this.isBlockedByPlayer()) {
-                this.shoot();
-                this.stuckFrames = 0;
+                this.stuckFrames = 0; 
             } else {
                 this.stuckFrames++;
             }
         } else {
-            this.stuckFrames = 0;
+            // Movement successful
+            if (this.stuckFrames > 0) this.stuckFrames = 0;
         }
 
         this.x += res.dx;
@@ -540,20 +556,18 @@ export class EnemyTank extends Tank {
         const col = Math.floor((this.x + this.w / 2) / CELL_SIZE);
         const row = Math.floor((this.y + this.h / 2) / CELL_SIZE);
 
-        // Scan ahead until map boundary
-        for (let step = 1; step <= 40; step++) {
+        for (let step = 1; step <= 30; step++) {
             let checkR = row, checkC = col;
             if (this.direction === Direction.UP) checkR = row - step;
             else if (this.direction === Direction.DOWN) checkR = row + step;
             else if (this.direction === Direction.LEFT) checkC = col - step;
             else if (this.direction === Direction.RIGHT) checkC = col + step;
 
-            // Boundary check: if we've gone off the map, stop scanning
             if (checkR < 0 || checkR >= GRID_ROWS || checkC < 0 || checkC >= GRID_COLS) break;
             
             const type = map.getTerrainType(checkR, checkC);
 
-            // Base ahead — FIRE IMMEDIATELY
+            // Base ahead — FIRE
             if (type === 6) {
                 this.shoot();
                 return;
@@ -562,32 +576,28 @@ export class EnemyTank extends Tank {
             // Player ahead
             const player = this.gameManager.getPlayer();
             if (player && !player.isDead) {
-                const pCol = Math.floor((player.x + player.w / 2) / CELL_SIZE);
-                const pRow = Math.floor((player.y + player.h / 2) / CELL_SIZE);
+                const px1 = Math.floor(player.x / CELL_SIZE);
+                const py1 = Math.floor(player.y / CELL_SIZE);
+                const px2 = Math.floor((player.x + player.w - 1) / CELL_SIZE);
+                const py2 = Math.floor((player.y + player.h - 1) / CELL_SIZE);
                 
-                // Detection for 2x2 player tank
-                const isPlayerAtCell = (checkR === pRow || checkR === pRow + 1) && 
-                                       (checkC === pCol || checkC === pCol + 1);
-
-                if (isPlayerAtCell) {
+                if ((checkR >= py1 && checkR <= py2) && (checkC >= px1 && checkC <= px2)) {
                     this.shoot();
                     return;
                 }
             }
 
-            // Wall ahead — shoot if it's on our path and destructible
-            if (type === 1 || (type === 2 && this.bulletPower >= 2)) {
-                // If it's a wall and we are close, we still clear it.
-                // For long distance walls, we don't necessarily want to spray bricks constantly
-                // unless it's within a reasonable range (like the old 8 cells) or we are on a path.
-                if (step <= 8 || Math.random() < 0.05) {
-                    this.shoot();
-                }
+            // Brick walls
+            if (type === 1) {
+                this.shoot();
                 return;
             }
 
-            // Steel that we can't break — stop scanning
-            if (type === 2) return;
+            // Impassable steel
+            if (type === 2) {
+                if (this.bulletPower >= 2) this.shoot();
+                return; 
+            }
         }
     }
 
@@ -598,7 +608,17 @@ export class EnemyTank extends Tank {
     private recoverFromStuck() {
         this.snapToGrid();
 
-        // If player is nearby or in LoS, don't turn away, just face them and shoot
+        // 1. Back off slightly to unjam
+        const backDir = this.getOpposite(this.direction);
+        let bx = 0, by = 0;
+        if (backDir === Direction.UP) by = -2;
+        else if (backDir === Direction.DOWN) by = 2;
+        else if (backDir === Direction.LEFT) bx = -2;
+        else if (backDir === Direction.RIGHT) bx = 2;
+        this.x += bx;
+        this.y += by;
+
+        // 2. Immediate look for target
         const losDir = this.getLineOfSightDirection();
         if (losDir !== null) {
             this.direction = losDir;
@@ -607,22 +627,12 @@ export class EnemyTank extends Tank {
             return;
         }
 
-        if (this.isBlockedByBase()) {
-            this.shoot();
-            this.stuckFrames = 0;
-            return;
-        }
+        // 3. Try to shoot through whatever blocked us
+        this.shoot();
 
-        if (this.isBlockedByPlayer()) {
-            this.shoot();
-            this.stuckFrames = 0;
-            return;
-        }
-
-        this.shoot(); // Try to blast through whatever is in front
-
+        // 4. Force a new direction and path
         const passable = this.getPassableDirections();
-        const choices = passable.filter(d => d !== this.direction && d !== this.getOpposite(this.direction));
+        const choices = passable.filter(d => d !== this.direction);
 
         if (choices.length > 0) {
             this.direction = choices[Math.floor(Math.random() * choices.length)];
@@ -635,7 +645,7 @@ export class EnemyTank extends Tank {
         this.stuckFrames = 0;
         this.positionQuietFrames = 0;
         this.currentPath = [];
-        this.pathRefreshTimer = 0;
+        this.pathRefreshTimer = 0; // Force path update next frame
     }
 
     // ═══════════════════════════════════════════════════════
