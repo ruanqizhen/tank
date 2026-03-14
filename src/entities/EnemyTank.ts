@@ -13,6 +13,7 @@ export class EnemyTank extends Tank {
     private lastX: number = 0;
     private lastY: number = 0;
     private positionQuietFrames: number = 0;
+    private waitFrames: number = 0;
 
     public holdsPowerUp: boolean = false;
     private flashTimer: number = 0;
@@ -111,6 +112,10 @@ export class EnemyTank extends Tank {
             if (this.flashTimer <= 0) {
                 this.hitFlashActive = false;
             }
+        }
+
+        if (this.waitFrames > 0) {
+            this.waitFrames--;
         }
 
         this.updateAI();
@@ -457,11 +462,18 @@ export class EnemyTank extends Tank {
             }
         }
 
-        // ── Crowding avoidance ──
-        if (aligned) {
+        // ── Crowding avoidance: Asymmetric Priority ──
+        if (aligned && this.waitFrames <= 0) {
             const crowdingEnemy = this.getOverlappingEnemy();
             if (crowdingEnemy) {
-                if (this.stuckFrames >= (crowdingEnemy as any).stuckFrames) {
+                // Priority: (stuck more) OR (stuck equal AND higher alphanumeric ID)
+                // The higher priority tank detours; the lower priority wait.
+                const myStuck = this.stuckFrames;
+                const otherStuck = (crowdingEnemy as any).stuckFrames;
+                
+                const myPriority = myStuck > otherStuck || (myStuck === otherStuck && this.id < crowdingEnemy.id);
+                
+                if (myPriority) {
                     const passable = this.getPassableDirections();
                     const perpDirs = passable.filter(d =>
                         d !== this.direction && d !== this.getOpposite(this.direction)
@@ -473,6 +485,9 @@ export class EnemyTank extends Tank {
                         this.pathRefreshTimer = 10;
                         this.stuckFrames = 0;
                     }
+                } else {
+                    // I am lower priority: wait for the other to move
+                    this.waitFrames = 12; // Yield for ~200ms
                 }
             }
         }
