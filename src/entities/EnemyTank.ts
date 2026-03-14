@@ -434,15 +434,17 @@ export class EnemyTank extends Tank {
         if (aligned) this.snapToGrid();
 
         // ── Priority 1: Line-of-sight to player or base → SHOOT ──
-        const losDir = this.getLineOfSightDirection();
-        if (losDir !== null) {
-            if (this.direction === losDir) {
-                this.shoot();
-            } else if (aligned || Math.random() < 0.2) {
-                // More aggressive turning toward target in LoS
-                this.direction = losDir;
-                this.stuckFrames = 0;
-                this.currentPath = []; // Refresh path since we turned
+        if (aligned) {
+            const losDir = this.getLineOfSightDirection();
+            if (losDir !== null) {
+                if (this.direction === losDir) {
+                    this.shoot();
+                } else {
+                    // Turn to face target in LoS
+                    this.direction = losDir;
+                    this.stuckFrames = 0;
+                    this.currentPath = []; 
+                }
             }
         }
 
@@ -450,7 +452,7 @@ export class EnemyTank extends Tank {
         if (aligned) {
             this.pathRefreshTimer--;
             if (this.pathRefreshTimer <= 0 || this.currentPath.length === 0) {
-                this.pathRefreshTimer = 30 + Math.floor(Math.random() * 20); // More frequent updates
+                this.pathRefreshTimer = 30 + Math.floor(Math.random() * 20); 
                 this.selectTargetAndPath();
             }
         }
@@ -504,9 +506,8 @@ export class EnemyTank extends Tank {
         // ── Execute movement ──
         this.executeMovement();
 
-        // ── Shoot at base/walls/player - UNCOUPLED from alignment ──
-        // Only run every few frames for performance, but much faster than waiting for grid snap
-        if (Math.floor(Date.now() / 16) % 5 === 0) {
+        // ── Shoot at base/walls/player - ONLY if aligned to grid ──
+        if (aligned && Math.floor(Date.now() / 16) % 2 === 0) {
             this.handleOpportunisticShooting();
         }
     }
