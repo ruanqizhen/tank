@@ -212,6 +212,25 @@ export class EnemyTank extends Tank {
         return this.gameManager.getCollisionSystem().isIntersecting(checkArea, playerBox);
     }
 
+    private isBlockedByBase(): boolean {
+        // Small margin to check just in front of the tank
+        const margin = 4;
+        const checkArea = {
+            x: this.x,
+            y: this.y,
+            w: this.w,
+            h: this.h
+        };
+
+        if (this.direction === Direction.UP) checkArea.y -= margin;
+        else if (this.direction === Direction.DOWN) checkArea.y += margin;
+        else if (this.direction === Direction.LEFT) checkArea.x -= margin;
+        else if (this.direction === Direction.RIGHT) checkArea.x += margin;
+
+        const terrainHits = this.gameManager.getCollisionSystem().queryTerrain(checkArea);
+        return terrainHits.some(hit => hit.type === 6); // 6 is Base
+    }
+
     // ═══════════════════════════════════════════════════════
     //  LINE OF SIGHT: Can we see the player in a straight line?
     // ═══════════════════════════════════════════════════════
@@ -297,6 +316,13 @@ export class EnemyTank extends Tank {
             if (d < baseDist) baseDist = d;
         }
 
+        // Priority 1: Attack base if nearby or if it's the primary strategy
+        let basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
+        if (basePath.length > 0 && (baseDist < 15 || Math.random() < 0.7)) {
+            this.currentPath = basePath;
+            return;
+        }
+
         // Priority 2: Choose between power-up and base based on distance
         const preferPowerUp = closestPU && closestPUDist < baseDist;
 
@@ -317,9 +343,9 @@ export class EnemyTank extends Tank {
             const playerDist = this.gridDistTo(pCol, pRow);
 
             if (playerDist < 12) {
-                const path = this.pathfinder.findPathToPlayer(pos.col, pos.row, pCol, pRow, this.bulletPower);
-                if (path.length > 0) {
-                    this.currentPath = path;
+                basePath = this.pathfinder.findPathToPlayer(pos.col, pos.row, pCol, pRow, this.bulletPower);
+                if (basePath.length > 0) {
+                    this.currentPath = basePath;
                     return;
                 }
             }
@@ -328,7 +354,7 @@ export class EnemyTank extends Tank {
         // Priority 4: Attack base (or grab power-up if base was preferred but we got here)
         if (!preferPowerUp && closestPU) {
             // Base was preferred but let's try base first
-            const basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
+            basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
             if (basePath.length > 0) {
                 this.currentPath = basePath;
                 return;
@@ -344,7 +370,7 @@ export class EnemyTank extends Tank {
         }
 
         // Default: attack the base
-        const basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
+        basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
         if (basePath.length > 0) {
             this.currentPath = basePath;
             return;
@@ -486,8 +512,11 @@ export class EnemyTank extends Tank {
         const res = this.gameManager.getCollisionSystem().resolveMovement(this, dx, dy);
 
         if ((dx !== 0 && res.dx === 0) || (dy !== 0 && res.dy === 0)) {
-            // If blocked by player, don't increment stuckFrames (stay and fight)
-            if (this.isBlockedByPlayer()) {
+            // Priority: Shoot if blocked by base or player
+            if (this.isBlockedByBase()) {
+                this.shoot();
+                this.stuckFrames = 0; // Stay and keep firing at the base
+            } else if (this.isBlockedByPlayer()) {
                 this.shoot();
                 this.stuckFrames = 0;
             } else {
@@ -573,6 +602,12 @@ export class EnemyTank extends Tank {
         const losDir = this.getLineOfSightDirection();
         if (losDir !== null) {
             this.direction = losDir;
+            this.shoot();
+            this.stuckFrames = 0;
+            return;
+        }
+
+        if (this.isBlockedByBase()) {
             this.shoot();
             this.stuckFrames = 0;
             return;
