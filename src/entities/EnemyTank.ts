@@ -443,7 +443,7 @@ export class EnemyTank extends Tank {
                     // Turn to face target in LoS
                     this.direction = losDir;
                     this.stuckFrames = 0;
-                    this.currentPath = []; 
+                    this.currentPath = [];
                 }
             }
         }
@@ -451,8 +451,8 @@ export class EnemyTank extends Tank {
         // ── Refresh pathfinding periodically ──
         if (aligned) {
             this.pathRefreshTimer--;
-            if (this.pathRefreshTimer <= 0 || this.currentPath.length === 0) {
-                this.pathRefreshTimer = 30 + Math.floor(Math.random() * 20); 
+            if (this.pathRefreshTimer <= 0) {
+                this.pathRefreshTimer = 30 + Math.floor(Math.random() * 20);
                 this.selectTargetAndPath();
             }
         }
@@ -498,7 +498,7 @@ export class EnemyTank extends Tank {
                     this.stuckFrames++;
                 } else {
                     this.currentPath = [];
-                    this.pathRefreshTimer = 0; 
+                    this.pathRefreshTimer = 0;
                 }
             }
         }
@@ -534,7 +534,7 @@ export class EnemyTank extends Tank {
             // Priority: Shoot if blocked by base or player
             if (this.isBlockedByBase() || this.isBlockedByPlayer()) {
                 this.shoot();
-                this.stuckFrames = 0; 
+                this.stuckFrames = 0;
             } else {
                 this.stuckFrames++;
             }
@@ -565,7 +565,7 @@ export class EnemyTank extends Tank {
             else if (this.direction === Direction.RIGHT) checkC = col + step;
 
             if (checkR < 0 || checkR >= GRID_ROWS || checkC < 0 || checkC >= GRID_COLS) break;
-            
+
             const type = map.getTerrainType(checkR, checkC);
 
             // Base ahead — FIRE
@@ -581,7 +581,7 @@ export class EnemyTank extends Tank {
                 const py1 = Math.floor(player.y / CELL_SIZE);
                 const px2 = Math.floor((player.x + player.w - 1) / CELL_SIZE);
                 const py2 = Math.floor((player.y + player.h - 1) / CELL_SIZE);
-                
+
                 if ((checkR >= py1 && checkR <= py2) && (checkC >= px1 && checkC <= px2)) {
                     this.shoot();
                     return;
@@ -597,7 +597,7 @@ export class EnemyTank extends Tank {
             // Impassable steel
             if (type === 2) {
                 if (this.bulletPower >= 2) this.shoot();
-                return; 
+                return;
             }
         }
     }
@@ -688,7 +688,7 @@ export class EnemyTank extends Tank {
             ctx.shadowColor = '#f00';
             ctx.shadowBlur = 8;
             ctx.fill();
-            
+
             // Small white highlight core
             ctx.beginPath();
             ctx.arc(drawX, drawY, 1, 0, Math.PI * 2);
