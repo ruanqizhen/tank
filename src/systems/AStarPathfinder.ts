@@ -36,7 +36,7 @@ export class AStarPathfinder {
             case 3: return 1;   // Forest (passable, just hides)
             case 4: return Infinity; // Water — impassable
             case 5: return 1.5; // Ice — slightly costly (slippery)
-            case 6: return Infinity; // Base — NEVER path through base
+            case 6: return 5;   // Base — passable but with cost (destructible)
             default: return 1;
         }
     }
@@ -189,28 +189,15 @@ export class AStarPathfinder {
             return this.findPath(startCol, startRow, Math.floor(GRID_COLS / 2) - 1, GRID_ROWS - 2, bulletPower);
         }
 
-        // Path to the row ABOVE the base (attack position), not INTO the base
-        let bestPath: Direction[] = [];
-        let bestCost = Infinity;
-
+        // Target the top-left of the base area directly
+        let minC = Infinity, minR = Infinity;
         for (const base of baseCoords) {
-            // Try positions around the base (above, left, right)
-            const attackPositions = [
-                { c: base.c, r: base.r - 2 },     // above
-                { c: base.c - 2, r: base.r },      // left
-                { c: base.c + 2, r: base.r },      // right
-            ];
-
-            for (const pos of attackPositions) {
-                const path = this.findPath(startCol, startRow, pos.c, pos.r, bulletPower);
-                if (path.length > 0 && path.length < bestCost) {
-                    bestCost = path.length;
-                    bestPath = path;
-                }
-            }
+            if (base.c < minC) minC = base.c;
+            if (base.r < minR) minR = base.r;
         }
-
-        return bestPath;
+        
+        // Return a path directly to the base corner
+        return this.findPath(startCol, startRow, minC, minR, bulletPower);
     }
 
     public findPathToPlayer(startCol: number, startRow: number, playerCol: number, playerRow: number, bulletPower: number = 1): Direction[] {
@@ -224,7 +211,7 @@ export class AStarPathfinder {
         const map = this.map;
         const check = (r: number, c: number): boolean => {
             const t = map.getTerrainType(r, c);
-            if (t === 1) return true; // Brick always destructible
+            if (t === 1 || t === 6) return true; // Brick and Base are always destructible
             if (t === 2 && bulletPower >= 2) return true; // Steel for power-2
             return false;
         };
