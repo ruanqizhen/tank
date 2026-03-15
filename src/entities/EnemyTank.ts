@@ -4,6 +4,13 @@ import { GameManager } from '../engine/GameManager';
 import { CELL_SIZE, GRID_COLS, GRID_ROWS, BATTLE_AREA_X, BATTLE_AREA_Y } from '../constants';
 import { AStarPathfinder } from '../systems/AStarPathfinder';
 
+export enum EnemyStrategy {
+    BASE = 'BASE',
+    PLAYER = 'PLAYER',
+    POWERUP = 'POWERUP',
+    WANDER = 'WANDER'
+}
+
 export class EnemyTank extends Tank {
     private spawnTimer: number = 60;
     public hasSpawned: boolean = false;
@@ -25,6 +32,14 @@ export class EnemyTank extends Tank {
     private currentPath: Direction[] = [];
     private pathRefreshTimer: number = 0;
 
+    // Grid Alignment Tracking
+    private lastProcessedCol: number = -1;
+    private lastProcessedRow: number = -1;
+
+    // Strategy Commitment
+    private currentStrategy: EnemyStrategy = EnemyStrategy.BASE;
+    private strategyTimer: number = 0;
+
     constructor(gameManager: GameManager, x: number, y: number, grade: TankGrade, holdsPowerUp: boolean = false, behavior: EnemyBehavior = EnemyBehavior.ATTACK) {
         super(gameManager);
         this.x = x * CELL_SIZE;
@@ -36,6 +51,9 @@ export class EnemyTank extends Tank {
         this.grade = grade;
         this.holdsPowerUp = holdsPowerUp;
         this.behavior = behavior;
+        
+        this.currentStrategy = EnemyStrategy.BASE;
+        this.strategyTimer = 180 + Math.floor(Math.random() * 120);
 
         this.pathfinder = new AStarPathfinder(this.gameManager.getMap());
 
@@ -126,9 +144,28 @@ export class EnemyTank extends Tank {
     // ═══════════════════════════════════════════════════════
 
     private isAlignedToGrid(): boolean {
-        const mx = Math.abs(this.x % CELL_SIZE);
-        const my = Math.abs(this.y % CELL_SIZE);
-        return (mx < 0.2 || mx > CELL_SIZE - 0.2) && (my < 0.2 || my > CELL_SIZE - 0.2);
+        const threshold = this.speed;
+        const mx = this.x % CELL_SIZE;
+        const my = this.y % CELL_SIZE;
+        
+        // Use a more generous threshold based on speed to ensure fast tanks don't "hop" over centers
+        const nearX = mx < threshold || mx > CELL_SIZE - threshold;
+        const nearY = my < threshold || my > CELL_SIZE - threshold;
+        
+        if (nearX && nearY) {
+            const { col, row } = this.getGridPos();
+            // Only return true if we haven't processed THIS specific intersection yet
+            if (col !== this.lastProcessedCol || row !== this.lastProcessedRow) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private markAlignedProcessed(): void {
+        const { col, row } = this.getGridPos();
+        this.lastProcessedCol = col;
+        this.lastProcessedRow = row;
     }
 
     private snapToGrid() {
@@ -315,103 +352,71 @@ export class EnemyTank extends Tank {
     //  TARGET SELECTION — Priority-based
     // ═══════════════════════════════════════════════════════
 
-    private selectTargetAndPath(): void {
+    private selectTargetAndPath(forceNewStrategy: boolean = false): void {
         const pos = this.getGridPos();
         const player = this.gameManager.getPlayer();
         const powerUps = this.gameManager.getPowerUpSystem().getPowerUps().filter(p => !p.isDead);
 
-        // Calculate distance to closest power-up
-        let closestPUDist = Infinity;
-        let closestPU: any = null;
-        if (powerUps.length > 0) {
+        // ── 1. Strategy Evaluation (Commitment) ──
+        if (this.strategyTimer <= 0 || forceNewStrategy || this.currentPath.length === 0) {
+            // Reset timer (3-5 seconds normally)
+            this.strategyTimer = 180 + Math.floor(Math.random() * 120);
+
+            // Heuristics for picking strategy
+            const baseCoords = this.gameManager.getMap().baseCoords;
+            let baseDist = Infinity;
+            for (const b of baseCoords) {
+                const d = this.gridDistTo(b.c, b.r);
+                if (d < baseDist) baseDist = d;
+            }
+
+            let closestPUDist = Infinity;
+            if (powerUps.length > 0) {
+                for (const pu of powerUps) {
+                    const d = this.gridDistTo(Math.round(pu.x / CELL_SIZE), Math.round(pu.y / CELL_SIZE));
+                    if (d < closestPUDist) closestPUDist = d;
+                }
+            }
+
+            let playerDist = Infinity;
+            if (player && !player.isDead) {
+                playerDist = this.gridDistTo(Math.round(player.x / CELL_SIZE), Math.round(player.y / CELL_SIZE));
+            }
+
+            // Decide strategy
+            if (closestPUDist < 8) {
+                this.currentStrategy = EnemyStrategy.POWERUP;
+            } else if (playerDist < 10) {
+                this.currentStrategy = EnemyStrategy.PLAYER;
+            } else {
+                this.currentStrategy = EnemyStrategy.BASE;
+            }
+        }
+
+        // ── 2. Strategy Execution ──
+        let path: Direction[] = [];
+        if (this.currentStrategy === EnemyStrategy.POWERUP && powerUps.length > 0) {
+            let closestPU = powerUps[0];
+            let minDist = Infinity;
             for (const pu of powerUps) {
-                const puCol = Math.round(pu.x / CELL_SIZE);
-                const puRow = Math.round(pu.y / CELL_SIZE);
-                const d = this.gridDistTo(puCol, puRow);
-                if (d < closestPUDist) {
-                    closestPUDist = d;
-                    closestPU = pu;
-                }
+                const d = this.gridDistTo(Math.round(pu.x / CELL_SIZE), Math.round(pu.y / CELL_SIZE));
+                if (d < minDist) { minDist = d; closestPU = pu; }
             }
+            path = this.pathfinder.findPath(pos.col, pos.row, Math.round(closestPU.x / CELL_SIZE), Math.round(closestPU.y / CELL_SIZE), this.bulletPower);
         }
 
-        // Calculate distance to base
-        const baseCoords = this.gameManager.getMap().baseCoords;
-        let baseDist = Infinity;
-        for (const b of baseCoords) {
-            const d = this.gridDistTo(b.c, b.r);
-            if (d < baseDist) baseDist = d;
+        if (path.length === 0 && this.currentStrategy === EnemyStrategy.PLAYER && player && !player.isDead) {
+            path = this.pathfinder.findPathToPlayer(pos.col, pos.row, Math.round(player.x / CELL_SIZE), Math.round(player.y / CELL_SIZE), this.bulletPower);
         }
 
-        // Priority 1: Attack base if nearby or if it's the primary strategy
-        let basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
-        if (basePath.length > 0 && (baseDist < 15 || Math.random() < 0.7)) {
-            this.currentPath = basePath;
-            return;
+        if (path.length === 0) {
+            // Default or fallback to BASE
+            this.currentStrategy = EnemyStrategy.BASE;
+            path = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
         }
 
-        // Priority 2: Choose between power-up and base based on distance
-        const preferPowerUp = closestPU && closestPUDist < baseDist;
-
-        if (preferPowerUp) {
-            const puCol = Math.round(closestPU.x / CELL_SIZE);
-            const puRow = Math.round(closestPU.y / CELL_SIZE);
-            const path = this.pathfinder.findPath(pos.col, pos.row, puCol, puRow, this.bulletPower);
-            if (path.length > 0) {
-                this.currentPath = path;
-                return;
-            }
-        }
-
-        // Priority 3: Player nearby (within ~12 cells) → hunt them
-        if (player && !player.isDead) {
-            const pCol = Math.round(player.x / CELL_SIZE);
-            const pRow = Math.round(player.y / CELL_SIZE);
-            const playerDist = this.gridDistTo(pCol, pRow);
-
-            if (playerDist < 12) {
-                basePath = this.pathfinder.findPathToPlayer(pos.col, pos.row, pCol, pRow, this.bulletPower);
-                if (basePath.length > 0) {
-                    this.currentPath = basePath;
-                    return;
-                }
-            }
-        }
-
-        // Priority 4: Attack base (or grab power-up if base was preferred but we got here)
-        if (!preferPowerUp && closestPU) {
-            // Base was preferred but let's try base first
-            basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
-            if (basePath.length > 0) {
-                this.currentPath = basePath;
-                return;
-            }
-            // Fallback to power-up
-            const puCol = Math.round(closestPU.x / CELL_SIZE);
-            const puRow = Math.round(closestPU.y / CELL_SIZE);
-            const path = this.pathfinder.findPath(pos.col, pos.row, puCol, puRow, this.bulletPower);
-            if (path.length > 0) {
-                this.currentPath = path;
-                return;
-            }
-        }
-
-        // Default: attack the base
-        basePath = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
-        if (basePath.length > 0) {
-            this.currentPath = basePath;
-            return;
-        }
-
-        // Fallback: if no path found, head toward player
-        if (player && !player.isDead) {
-            const pCol = Math.round(player.x / CELL_SIZE);
-            const pRow = Math.round(player.y / CELL_SIZE);
-            const path = this.pathfinder.findPathToPlayer(pos.col, pos.row, pCol, pRow, this.bulletPower);
-            if (path.length > 0) {
-                this.currentPath = path;
-            }
-        }
+        // ── 3. Finalize ──
+        this.currentPath = path;
     }
 
     // ═══════════════════════════════════════════════════════
@@ -436,7 +441,13 @@ export class EnemyTank extends Tank {
         }
 
         const aligned = this.isAlignedToGrid();
-        if (aligned) this.snapToGrid();
+        if (aligned) {
+            this.snapToGrid();
+            this.markAlignedProcessed(); // Mark so we don't trigger again until we enter a new cell
+        }
+
+        // ── Strategy Maintenance ──
+        this.strategyTimer--;
 
         // ── Priority 1: Line-of-sight to player or base → SHOOT ──
         if (aligned) {
@@ -445,10 +456,10 @@ export class EnemyTank extends Tank {
                 if (this.direction === losDir) {
                     this.shoot();
                 } else {
-                    // Turn to face target in LoS
+                    // Turn to face target in LoS — but DON'T clear currentPath
+                    // We just "pause" the path while we shoot
                     this.direction = losDir;
                     this.stuckFrames = 0;
-                    this.currentPath = [];
                 }
             }
         }
@@ -457,8 +468,9 @@ export class EnemyTank extends Tank {
         if (aligned) {
             this.pathRefreshTimer--;
             if (this.pathRefreshTimer <= 0) {
-                this.pathRefreshTimer = 30 + Math.floor(Math.random() * 20);
-                this.selectTargetAndPath();
+                // Keep same strategy but re-calculate path to it
+                this.selectTargetAndPath(false);
+                this.pathRefreshTimer = 45 + Math.floor(Math.random() * 30);
             }
         }
 
@@ -466,8 +478,6 @@ export class EnemyTank extends Tank {
         if (aligned && this.waitFrames <= 0) {
             const crowdingEnemy = this.getOverlappingEnemy();
             if (crowdingEnemy) {
-                // Priority: (stuck more) OR (stuck equal AND higher alphanumeric ID)
-                // The higher priority tank detours; the lower priority wait.
                 const myStuck = this.stuckFrames;
                 const otherStuck = (crowdingEnemy as any).stuckFrames;
                 
@@ -486,8 +496,7 @@ export class EnemyTank extends Tank {
                         this.stuckFrames = 0;
                     }
                 } else {
-                    // I am lower priority: wait for the other to move
-                    this.waitFrames = 12; // Yield for ~200ms
+                    this.waitFrames = 12; 
                 }
             }
         }
@@ -662,6 +671,7 @@ export class EnemyTank extends Tank {
         this.positionQuietFrames = 0;
         this.currentPath = [];
         this.pathRefreshTimer = 0; // Force path update next frame
+        this.strategyTimer = 0;    // Force strategy re-evaluation
     }
 
     // ═══════════════════════════════════════════════════════
