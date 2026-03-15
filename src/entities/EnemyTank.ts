@@ -40,6 +40,9 @@ export class EnemyTank extends Tank {
     private currentStrategy: EnemyStrategy = EnemyStrategy.BASE;
     private strategyTimer: number = 0;
 
+    // Strategic Role (Permanent preference)
+    private primaryRole: EnemyStrategy = EnemyStrategy.BASE;
+
     // Debug Visualization
     private debugPathPoints: {x: number, y: number}[] = [];
     private debugColor: string = '#ffff00';
@@ -56,7 +59,10 @@ export class EnemyTank extends Tank {
         this.holdsPowerUp = holdsPowerUp;
         this.behavior = behavior;
         
-        this.currentStrategy = EnemyStrategy.BASE;
+        // Strategic Role (50/50 split between Base and Player)
+        this.primaryRole = Math.random() < 0.5 ? EnemyStrategy.BASE : EnemyStrategy.PLAYER;
+        this.currentStrategy = this.primaryRole;
+
         this.strategyTimer = 180 + Math.floor(Math.random() * 120);
 
         // Assign a random bright color for debug path
@@ -386,18 +392,11 @@ export class EnemyTank extends Tank {
                 }
             }
 
-            let playerDist = Infinity;
-            if (player && !player.isDead) {
-                playerDist = this.gridDistTo(Math.round(player.x / CELL_SIZE), Math.round(player.y / CELL_SIZE));
-            }
-
-            // Decide strategy
+            // Decide strategy: Power-ups first if close, then primary role
             if (closestPUDist < 8) {
                 this.currentStrategy = EnemyStrategy.POWERUP;
-            } else if (playerDist < 10) {
-                this.currentStrategy = EnemyStrategy.PLAYER;
             } else {
-                this.currentStrategy = EnemyStrategy.BASE;
+                this.currentStrategy = this.primaryRole;
             }
         }
 
