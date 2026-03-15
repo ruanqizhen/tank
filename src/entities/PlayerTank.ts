@@ -112,11 +112,20 @@ export class PlayerTank extends Tank {
 
     private updateStats() {
         const effectiveGrade = this.isMax ? TankGrade.ARMOR : this.grade;
+
+        // Base stats
         this.speed = effectiveGrade === TankGrade.FAST ? 2.5 : 1.5;
-        this.bulletSpeed = effectiveGrade === TankGrade.FAST ? 6 : 4;
-        this.maxBulletsOnScreen = effectiveGrade >= TankGrade.POWER ? 2 : 1;
-        this.bulletPower = effectiveGrade >= TankGrade.POWER ? 2 : 1;
-        this.shootCooldown = this.isMax ? 12 : 20;
+        this.bulletPower = (effectiveGrade >= TankGrade.POWER) ? 2 : 1;
+
+        // Progressive shooting mechanics
+        // 0.5s initial interval (50 frames at 60fps), reduced by 20% per level
+        this.shootCooldown = Math.round(50 * Math.pow(0.8, effectiveGrade - 1));
+
+        // Initial bullet speed 4, increased by 10% per level
+        this.bulletSpeed = 4 * Math.pow(1.1, effectiveGrade - 1);
+
+        // Remove the "only one bullet" restriction (set to 6, which is plenty for the cadence)
+        this.maxBulletsOnScreen = 6;
     }
 
     public update(dt: number) {
@@ -196,7 +205,7 @@ export class PlayerTank extends Tank {
             if (rawDirection !== this.direction) {
                 this.direction = rawDirection;
                 // Set an 8 frame delay (~133ms) before movement is allowed, making the turn perceptible
-                (this as any)._turnDelayTimer = 8; 
+                (this as any)._turnDelayTimer = 8;
                 wantsToMove = false;
                 justTurned = true;
             } else {
