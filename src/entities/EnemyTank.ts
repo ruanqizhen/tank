@@ -40,6 +40,10 @@ export class EnemyTank extends Tank {
     private currentStrategy: EnemyStrategy = EnemyStrategy.BASE;
     private strategyTimer: number = 0;
 
+    // Debug Visualization
+    private debugPathPoints: {x: number, y: number}[] = [];
+    private debugColor: string = '#ffff00';
+
     constructor(gameManager: GameManager, x: number, y: number, grade: TankGrade, holdsPowerUp: boolean = false, behavior: EnemyBehavior = EnemyBehavior.ATTACK) {
         super(gameManager);
         this.x = x * CELL_SIZE;
@@ -54,6 +58,10 @@ export class EnemyTank extends Tank {
         
         this.currentStrategy = EnemyStrategy.BASE;
         this.strategyTimer = 180 + Math.floor(Math.random() * 120);
+
+        // Assign a random bright color for debug path
+        const colors = ['#f0f', '#0ff', '#ff0', '#0f0', '#fff', '#f90', '#f00'];
+        this.debugColor = colors[Math.floor(Math.random() * colors.length)];
 
         this.pathfinder = new AStarPathfinder(this.gameManager.getMap());
 
@@ -413,10 +421,33 @@ export class EnemyTank extends Tank {
             // Default or fallback to BASE
             this.currentStrategy = EnemyStrategy.BASE;
             path = this.pathfinder.findPathToBase(pos.col, pos.row, this.bulletPower);
+
+            // FALLBACK: If base is unreachable, turn to attack player
+            if (path.length === 0 && player && !player.isDead) {
+                this.currentStrategy = EnemyStrategy.PLAYER;
+                path = this.pathfinder.findPathToPlayer(pos.col, pos.row, Math.round(player.x / CELL_SIZE), Math.round(player.y / CELL_SIZE), this.bulletPower);
+            }
         }
 
         // ── 3. Finalize ──
         this.currentPath = path;
+        this.updateDebugPathPoints();
+    }
+
+    private updateDebugPathPoints(): void {
+        this.debugPathPoints = [];
+        if (this.currentPath.length === 0) return;
+
+        let { col, row } = this.getGridPos();
+        this.debugPathPoints.push({ x: col * CELL_SIZE, y: row * CELL_SIZE });
+
+        for (const dir of this.currentPath) {
+            if (dir === Direction.UP) row--;
+            else if (dir === Direction.DOWN) row++;
+            else if (dir === Direction.LEFT) col--;
+            else if (dir === Direction.RIGHT) col++;
+            this.debugPathPoints.push({ x: col * CELL_SIZE, y: row * CELL_SIZE });
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -460,6 +491,7 @@ export class EnemyTank extends Tank {
                     // We just "pause" the path while we shoot
                     this.direction = losDir;
                     this.stuckFrames = 0;
+                    this.updateDebugPathPoints(); // Keep visualization anchored
                 }
             }
         }
@@ -510,6 +542,7 @@ export class EnemyTank extends Tank {
                     this.direction = nextDir;
                 }
                 this.currentPath.shift();
+                if (this.debugPathPoints.length > 0) this.debugPathPoints.shift();
                 this.stuckFrames = 0;
             } else {
                 // Path is blocked — is it destructible?
@@ -522,6 +555,7 @@ export class EnemyTank extends Tank {
                     this.stuckFrames++;
                 } else {
                     this.currentPath = [];
+                    this.debugPathPoints = [];
                     this.pathRefreshTimer = 0;
                 }
             }
@@ -698,6 +732,34 @@ export class EnemyTank extends Tank {
 
         this.colorOverride = color;
         super.render(ctx);
+
+        // ── AI PATH DEBUGGING (Ctrl+D to toggle) ──
+        if (this.gameManager.debugMode && this.debugPathPoints.length > 1) {
+            ctx.save();
+            ctx.strokeStyle = this.debugColor;
+            ctx.setLineDash([5, 5]);
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            
+            // Start from tank center
+            ctx.moveTo(this.x + BATTLE_AREA_X + this.w / 2, this.y + BATTLE_AREA_Y + this.h / 2);
+            
+            for (let i = 1; i < this.debugPathPoints.length; i++) {
+                const p = this.debugPathPoints[i];
+                ctx.lineTo(p.x + BATTLE_AREA_X + this.w / 2, p.y + BATTLE_AREA_Y + this.h / 2);
+            }
+            ctx.stroke();
+
+            // Target marker
+            const target = this.debugPathPoints[this.debugPathPoints.length - 1];
+            ctx.beginPath();
+            ctx.arc(target.x + BATTLE_AREA_X + this.w / 2, target.y + BATTLE_AREA_Y + this.h / 2, 4, 0, Math.PI * 2);
+            ctx.fillStyle = this.debugColor;
+            ctx.fill();
+
+            ctx.restore();
+        }
 
         // Draw blinking red light on turret for power-up carriers
         if (this.holdsPowerUp && Math.floor(Date.now() / 250) % 2 === 0) {

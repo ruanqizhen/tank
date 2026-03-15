@@ -50,6 +50,7 @@ export class GameManager {
     private savedPlayerIsMax: boolean = false;
     private respawnDelay: number = 0;
     private gameOverSelection: number = 0; // 0: Continue, 1: Back to Menu
+    public debugMode: boolean = false;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -128,6 +129,15 @@ export class GameManager {
                 }
             });
         }
+
+        // Global Debug Toggle (Ctrl+D)
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.code === 'KeyD') {
+                e.preventDefault();
+                this.debugMode = !this.debugMode;
+                console.log(`Debug Mode: ${this.debugMode ? 'ON' : 'OFF'}`);
+            }
+        });
     }
 
     public start() {
