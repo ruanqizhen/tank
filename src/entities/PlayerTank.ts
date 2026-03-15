@@ -132,6 +132,14 @@ export class PlayerTank extends Tank {
         if (this.isDead) return;
         this.updateCooldowns(dt);
 
+        // Instant Fire Reward (Rapid Recovery)
+        // If no bullets on screen, allow firing again after only 50ms (3 frames)
+        if (this.currentCooldown > 3) {
+            if (this.gameManager.getBulletCountByOwner(this) === 0) {
+                this.currentCooldown = 3;
+            }
+        }
+
         const inputSystem = this.gameManager.getInputManager();
         const action = inputSystem.getActionState();
 
