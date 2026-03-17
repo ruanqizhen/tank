@@ -43,6 +43,9 @@ export class EnemyTank extends Tank {
     // Strategic Role (Permanent preference)
     private primaryRole: EnemyStrategy = EnemyStrategy.BASE;
 
+    // AI Sophistication
+    private useAStar: boolean = true;
+
     // Debug Visualization
     private debugPathPoints: {x: number, y: number}[] = [];
     private debugColor: string = '#ffff00';
@@ -64,6 +67,9 @@ export class EnemyTank extends Tank {
         this.currentStrategy = this.primaryRole;
 
         this.strategyTimer = 180 + Math.floor(Math.random() * 120);
+
+        // AI Sophistication Split: Hard = 100% A*, Easy = 20% A*
+        this.useAStar = this.gameManager.isHardMode ? true : (Math.random() < 0.2);
 
         // Assign a random bright color for debug path
         const colors = ['#f0f', '#0ff', '#ff0', '#0f0', '#fff', '#f90', '#f00'];
@@ -287,6 +293,34 @@ export class EnemyTank extends Tank {
         return terrainHits.some(hit => hit.type === 6); // 6 is Base
     }
 
+    private isBlockedByEnemy(): boolean {
+        const entities = this.gameManager.getEntities();
+        // Small margin to check just in front of the tank
+        const margin = 4;
+        const checkArea = {
+            x: this.x,
+            y: this.y,
+            w: this.w,
+            h: this.h
+        };
+
+        if (this.direction === Direction.UP) checkArea.y -= margin;
+        else if (this.direction === Direction.DOWN) checkArea.y += margin;
+        else if (this.direction === Direction.LEFT) checkArea.x -= margin;
+        else if (this.direction === Direction.RIGHT) checkArea.x += margin;
+
+        for (const e of entities) {
+            if (e === this || e.isDead || e.faction !== TankFaction.ENEMY) continue;
+            if (!(e instanceof Tank)) continue;
+            
+            const otherBox = { x: e.x, y: e.y, w: e.w, h: e.h };
+            if (this.gameManager.getCollisionSystem().isIntersecting(checkArea, otherBox)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ═══════════════════════════════════════════════════════
     //  LINE OF SIGHT: Can we see the player in a straight line?
     // ═══════════════════════════════════════════════════════
@@ -454,6 +488,11 @@ export class EnemyTank extends Tank {
     // ═══════════════════════════════════════════════════════
 
     private updateAI() {
+        if (!this.useAStar) {
+            this.updateRandomAI();
+            return;
+        }
+
         // Track if stuck
         const distSq = (this.x - this.lastX) ** 2 + (this.y - this.lastY) ** 2;
         if (distSq < 0.01) {
@@ -588,12 +627,25 @@ export class EnemyTank extends Tank {
 
         // If we intended to move but were blocked
         if ((dx !== 0 && res.dx === 0) || (dy !== 0 && res.dy === 0)) {
-            // Priority: Shoot if blocked by base or player
-            if (this.isBlockedByBase() || this.isBlockedByPlayer()) {
+            // Priority 1: Shoot if blocked by base or player
+            const blockedByBase = this.isBlockedByBase();
+            const blockedByPlayer = this.isBlockedByPlayer();
+            
+            if (blockedByBase || blockedByPlayer) {
                 this.shoot();
                 this.stuckFrames = 0;
             } else {
                 this.stuckFrames++;
+            }
+
+            // Priority 2: Anti-clumping for Random AI
+            // If blocked by player or another tank, 100% chance to turn immediately
+            if (!this.useAStar && (blockedByPlayer || this.isBlockedByEnemy())) {
+                this.snapToGrid();
+                const choices = this.getPassableDirections();
+                if (choices.length > 0) {
+                    this.direction = choices[Math.floor(Math.random() * choices.length)];
+                }
             }
         } else {
             // Movement successful
@@ -707,6 +759,51 @@ export class EnemyTank extends Tank {
         this.strategyTimer = 0;    // Force strategy re-evaluation
     }
 
+    private updateRandomAI() {
+        const aligned = this.isAlignedToGrid();
+        if (aligned) {
+            this.snapToGrid();
+            this.markAlignedProcessed();
+
+            // Check LoS even in random mode - still a threat!
+            const losDir = this.getLineOfSightDirection();
+            if (losDir !== null) {
+                if (this.direction === losDir) {
+                    this.shoot();
+                } else {
+                    this.direction = losDir;
+                }
+            }
+
+            // Occasionally change direction randomly or if blocked
+            const blocked = !this.canMoveInDirection(this.direction);
+            const blockedByEnemyInner = this.isBlockedByEnemy();
+            const blockedByPlayerInner = this.isBlockedByPlayer();
+            const randomChange = Math.random() < 0.05; // ~5% chance per cell to turn
+
+            // Junction Detection: 30% chance to turn at a side-path
+            const passable = this.getPassableDirections();
+            const sidePaths = passable.filter(d => 
+                d !== this.direction && d !== this.getOpposite(this.direction)
+            );
+            const junctionTurn = sidePaths.length > 0 && Math.random() < 0.3;
+
+            if (blocked || randomChange || blockedByEnemyInner || blockedByPlayerInner || junctionTurn) {
+                const choices = junctionTurn ? sidePaths : passable;
+                if (choices.length > 0) {
+                    this.direction = choices[Math.floor(Math.random() * choices.length)];
+                }
+            }
+        }
+
+        this.executeMovement();
+
+        // Opportunistic shooting (every few frames)
+        if (aligned && Math.floor(Date.now() / 16) % 4 === 0) {
+            this.handleOpportunisticShooting();
+        }
+    }
+
     // ═══════════════════════════════════════════════════════
     //  RENDERING
     // ═══════════════════════════════════════════════════════
@@ -782,5 +879,13 @@ export class EnemyTank extends Tank {
             ctx.fill();
             ctx.restore();
         }
+    }
+
+    public isUsingAStar(): boolean {
+        return this.useAStar;
+    }
+
+    public promoteToAStar(): void {
+        this.useAStar = true;
     }
 }

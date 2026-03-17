@@ -51,6 +51,7 @@ export class GameManager {
     private respawnDelay: number = 0;
     private gameOverSelection: number = 0; // 0: Continue, 1: Back to Menu
     public debugMode: boolean = false;
+    public isHardMode: boolean = false;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -97,6 +98,13 @@ export class GameManager {
         if (startBtn) {
             startBtn.addEventListener('click', () => {
                 if (this.state === GameState.MAIN_MENU) {
+                    // Capture difficulty setting
+                    const diffRadios = document.getElementsByName('difficulty') as NodeListOf<HTMLInputElement>;
+                    let selectedDiff = 'easy';
+                    diffRadios.forEach(r => { if (r.checked) selectedDiff = r.value; });
+                    this.isHardMode = (selectedDiff === 'hard');
+                    console.log(`Difficulty set to: ${selectedDiff.toUpperCase()}`);
+
                     this.confirmReleased = false;
                     this.resetGame();
                     this.switchState(GameState.STAGE_INTRO);
@@ -283,6 +291,16 @@ export class GameManager {
                 this.player.update(dt);
                 this.enemies.forEach(e => e.update(dt));
                 this.enemies = this.enemies.filter(e => !e.isDead);
+
+                // Ensure at least one tank uses A* in Easy Mode
+                if (!this.isHardMode && this.enemies.length > 0) {
+                    const hasAStar = this.enemies.some(e => e.isUsingAStar());
+                    if (!hasAStar) {
+                        // All A* tanks are dead, promote a random leftover to A*
+                        const randomIdx = Math.floor(Math.random() * this.enemies.length);
+                        this.enemies[randomIdx].promoteToAStar();
+                    }
+                }
 
                 // Push apart any overlapping tanks
                 this.collisionSystem.separateOverlappingEntities();
