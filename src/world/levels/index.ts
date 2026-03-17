@@ -18,6 +18,7 @@ import level17Map from './level17.txt?raw';
 import level18Map from './level18.txt?raw';
 import level19Map from './level19.txt?raw';
 import level20Map from './level20.txt?raw';
+import level21Map from './level21.txt?raw';
 
 export interface LevelConfig {
     stageNumber: number;
@@ -44,6 +45,7 @@ const MAP_DATA: string[] = [
     level06Map, level07Map, level08Map, level09Map, level10Map,
     level11Map, level12Map, level13Map, level14Map, level15Map,
     level16Map, level17Map, level18Map, level19Map, level20Map,
+    level21Map,
 ];
 
 /**
