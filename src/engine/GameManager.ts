@@ -93,24 +93,6 @@ export class GameManager {
         // Init state
         this.switchState(GameState.MAIN_MENU);
 
-        // UI events
-        const startBtn = document.getElementById('start-btn');
-        if (startBtn) {
-            startBtn.addEventListener('click', () => {
-                if (this.state === GameState.MAIN_MENU) {
-                    // Capture difficulty setting
-                    const diffRadios = document.getElementsByName('difficulty') as NodeListOf<HTMLInputElement>;
-                    let selectedDiff = 'easy';
-                    diffRadios.forEach(r => { if (r.checked) selectedDiff = r.value; });
-                    this.isHardMode = (selectedDiff === 'hard');
-                    console.log(`Difficulty set to: ${selectedDiff.toUpperCase()}`);
-
-                    this.confirmReleased = false;
-                    this.resetGame();
-                    this.switchState(GameState.STAGE_INTRO);
-                }
-            });
-        }
 
         // Help Modal toggle
         const helpBtn = document.getElementById('help-btn');
@@ -146,6 +128,90 @@ export class GameManager {
                 console.log(`Debug Mode: ${this.debugMode ? 'ON' : 'OFF'}`);
             }
         });
+
+        // --- Persistence: Setup UI and Load State ---
+        const lastDiff = localStorage.getItem('yanshan_tank_difficulty') || 'easy';
+        const diffRadios = document.getElementsByName('difficulty') as NodeListOf<HTMLInputElement>;
+        diffRadios.forEach(r => {
+            if (r.value === lastDiff) {
+                r.checked = true;
+                this.isHardMode = (lastDiff === 'hard');
+            }
+        });
+
+        const lastStage = localStorage.getItem('yanshan_tank_last_stage');
+        const continueBtn = document.getElementById('continue-btn');
+        const startBtn = document.getElementById('start-btn');
+        const continueStageVal = document.getElementById('continue-stage-val');
+        const startBtnText = startBtn?.querySelector('.btn-text');
+        const glowHtml = '<span class="btn-glow"></span>';
+        
+        let hasValidProgress = false;
+        let savedStageIdx = 0;
+
+        if (lastStage) {
+            savedStageIdx = parseInt(lastStage, 10);
+            if (savedStageIdx > 0 && savedStageIdx < LEVELS.length) {
+                hasValidProgress = true;
+            }
+        }
+
+        if (continueBtn && startBtn && continueStageVal) {
+            if (hasValidProgress) {
+                // 1. Promote Continue Button
+                continueBtn.classList.remove('secondary-btn', 'hidden');
+                continueBtn.querySelector('.glow-container')!.innerHTML = glowHtml;
+                continueStageVal.innerText = (savedStageIdx + 1).toString();
+                
+                // 2. Demote Start Button
+                startBtn.classList.add('secondary-btn');
+                startBtn.querySelector('.glow-container')!.innerHTML = '';
+                if (startBtnText) startBtnText.textContent = '重新开始';
+                
+                continueBtn.addEventListener('click', () => {
+                    if (this.state === GameState.MAIN_MENU) {
+                        const currentDiffRadios = document.getElementsByName('difficulty') as NodeListOf<HTMLInputElement>;
+                        let selectedDiff = 'easy';
+                        currentDiffRadios.forEach(r => { if (r.checked) selectedDiff = r.value; });
+                        this.isHardMode = (selectedDiff === 'hard');
+                        localStorage.setItem('yanshan_tank_difficulty', selectedDiff);
+
+                        this.confirmReleased = false;
+                        this.currentStageIdx = savedStageIdx;
+                        this.savedPlayerGrade = TankGrade.BASIC;
+                        this.savedPlayerIsMax = false;
+                        this.initLevel();
+                        this.switchState(GameState.STAGE_INTRO);
+                    }
+                });
+            } else {
+                // No progress or Stage 1: Standard Start
+                continueBtn.classList.add('hidden');
+                startBtn.classList.remove('secondary-btn');
+                startBtn.querySelector('.glow-container')!.innerHTML = glowHtml;
+                if (startBtnText) startBtnText.textContent = '开始游戏';
+            }
+        }
+
+        // --- Standard Start Button Listener ---
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                if (this.state === GameState.MAIN_MENU) {
+                    const currentDiffRadios = document.getElementsByName('difficulty') as NodeListOf<HTMLInputElement>;
+                    let selectedDiff = 'easy';
+                    currentDiffRadios.forEach(r => { if (r.checked) selectedDiff = r.value; });
+                    this.isHardMode = (selectedDiff === 'hard');
+                    localStorage.setItem('yanshan_tank_difficulty', selectedDiff);
+                    
+                    // Clear existing progress when starting a new game
+                    localStorage.removeItem('yanshan_tank_last_stage');
+
+                    this.confirmReleased = false;
+                    this.resetGame();
+                    this.switchState(GameState.STAGE_INTRO);
+                }
+            });
+        }
     }
 
     public start() {
@@ -412,6 +478,9 @@ export class GameManager {
                 this.savedPlayerGrade = this.player.grade;
                 this.savedPlayerIsMax = this.player.isMax;
                 this.currentStageIdx++;
+                
+                // Save progress
+                localStorage.setItem('yanshan_tank_last_stage', this.currentStageIdx.toString());
 
                 const mapIdx = this.currentStageIdx % LEVELS.length;
                 const configIdx = Math.min(this.currentStageIdx, LEVELS.length - 1);

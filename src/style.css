@@ -8,9 +8,13 @@
   --accent-dim: rgba(255, 51, 102, 0.15);
   --gold: #ffcc00;
   --surface: rgba(255, 255, 255, 0.04);
-  --surface-border: rgba(255, 255, 255, 0.08);
+  --surface-border: rgba(255, 255, 255, 0.1);
   --font-display: 'Orbitron', 'Noto Sans SC', sans-serif;
   --font-body: 'Noto Sans SC', 'Inter', system-ui, sans-serif;
+}
+
+.hidden {
+  display: none !important;
 }
 
 *,
