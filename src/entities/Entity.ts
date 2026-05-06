@@ -11,7 +11,7 @@ export abstract class Entity {
     public gameManager: GameManager;
 
     constructor(gameManager: GameManager, w: number, h: number) {
-        this.id = Math.random().toString(36).substr(2, 9);
+        this.id = Math.random().toString(36).slice(2, 11);
         this.gameManager = gameManager;
         this.w = w;
         this.h = h;

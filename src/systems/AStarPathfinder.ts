@@ -143,7 +143,7 @@ export class AStarPathfinder {
 
                 const moveCost = this.getTankMoveCost(neighbor.x, neighbor.y, bulletPower);
                 const g = current.g + moveCost;
-                const h = dH; // optimization: use dH from above
+                const h = this.heuristic(neighbor.x, neighbor.y, endCol, endRow);
                 const f = g + h;
 
                 const existing = openSet.find(n => n.x === neighbor.x && n.y === neighbor.y);

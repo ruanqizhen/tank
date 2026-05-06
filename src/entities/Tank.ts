@@ -23,6 +23,8 @@ export abstract class Tank extends Entity {
     public maxBulletsOnScreen: number = 1;
     public shootCooldown: number = 20;
     public currentCooldown: number = 0;
+    public collisionDmgCd: number = 0;
+    public turnDelayTimer: number = 0;
 
     protected colorOverride: string = '';
 
@@ -72,8 +74,8 @@ export abstract class Tank extends Entity {
             }
         }
         // Collision damage cooldown
-        if ((this as any)._collisionDmgCd > 0) {
-            (this as any)._collisionDmgCd -= dt;
+        if (this.collisionDmgCd > 0) {
+            this.collisionDmgCd -= dt;
         }
     }
 

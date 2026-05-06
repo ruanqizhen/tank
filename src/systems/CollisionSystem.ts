@@ -91,11 +91,11 @@ export class CollisionSystem {
                     blocking = true;
                     // Collision damage between opposing factions (once per cooldown)
                     if (entity.faction !== tank.faction) {
-                        const cd = (tank as any)._collisionDmgCd || 0;
-                        if (cd <= 0) {
+                        if (tank.collisionDmgCd <= 0 && entity.collisionDmgCd <= 0) {
                             tank.applyDamage();
                             entity.applyDamage();
-                            (tank as any)._collisionDmgCd = 60; // ~1 second cooldown
+                            tank.collisionDmgCd = 60;
+                            entity.collisionDmgCd = 60;
                         }
                     }
                     break;

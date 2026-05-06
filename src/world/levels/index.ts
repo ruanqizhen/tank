@@ -61,7 +61,7 @@ function generateLevelConfig(stage: number, mapStr: string): LevelConfig {
     // ── clamp helper ──
     const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-    // ── progress ratio 0..1 across 20 stages ──
+    // ── progress ratio 0..1 across 35 stages (gentle curve; maps loop after 21, difficulty keeps climbing) ──
     const t = clamp((stage - 1) / 35, 0, 1);
 
     // ── core scalars ──

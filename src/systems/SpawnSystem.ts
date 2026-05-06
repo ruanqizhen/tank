@@ -60,7 +60,7 @@ export class SpawnSystem {
         if (this.enemiesSpawned >= this.totalEnemiesToSpawn) return;
 
         // Check active enemy count
-        const activeEnemies = this.gameManager.getEntities().filter(e => e instanceof EnemyTank).length;
+        const activeEnemies = this.gameManager.getEntities().filter(e => e instanceof EnemyTank && (e as EnemyTank).hasSpawned).length;
         if (activeEnemies >= this.maxOnScreen) return;
 
         this.spawnTimer--;

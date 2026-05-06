@@ -90,7 +90,7 @@ export class PlayerTank extends Tank {
         this.isDead = true;
         this.gameManager.getParticleSystem().emitExplosion(this.x + this.w / 2, this.y + this.h / 2, 50, '#fa2');
 
-        if (this.lives >= 0) {
+        if (this.lives > 0) {
             this.gameManager.schedulePlayerRespawn();
         } else {
             this.gameManager.triggerGameOver();
@@ -104,9 +104,7 @@ export class PlayerTank extends Tank {
 
     public upgrade(newGrade: TankGrade) {
         this.grade = newGrade;
-        if (newGrade === TankGrade.ARMOR) {
-            this.isMax = true;
-        }
+        this.isMax = (newGrade === TankGrade.ARMOR);
         this.updateStats();
     }
 
@@ -204,8 +202,8 @@ export class PlayerTank extends Tank {
         let justTurned = false;
 
         // Decrement turn delay timer
-        if ((this as any)._turnDelayTimer > 0) {
-            (this as any)._turnDelayTimer -= dt;
+        if (this.turnDelayTimer > 0) {
+            this.turnDelayTimer -= dt;
         }
 
         // STEP A: Handle turning and movement delay
@@ -213,12 +211,12 @@ export class PlayerTank extends Tank {
             if (rawDirection !== this.direction) {
                 this.direction = rawDirection;
                 // Set an 8 frame delay (~133ms) before movement is allowed, making the turn perceptible
-                (this as any)._turnDelayTimer = 8;
+                this.turnDelayTimer = 8;
                 wantsToMove = false;
                 justTurned = true;
             } else {
                 // Direction matches. Check if we are still in the turn delay period
-                if ((this as any)._turnDelayTimer > 0) {
+                if (this.turnDelayTimer > 0) {
                     wantsToMove = false;
                     justTurned = true; // Still treating as "turning" to prevent grid-snap slipping
                 } else {
@@ -228,7 +226,7 @@ export class PlayerTank extends Tank {
             }
         } else {
             // Reset delay instantly if user releases all keys
-            (this as any)._turnDelayTimer = 0;
+            this.turnDelayTimer = 0;
         }
 
         let wantsToShoot = action.shoot;
