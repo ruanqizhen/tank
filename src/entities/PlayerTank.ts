@@ -89,6 +89,7 @@ export class PlayerTank extends Tank {
         this.lives--;
         this.isDead = true;
         this.gameManager.getParticleSystem().emitExplosion(this.x + this.w / 2, this.y + this.h / 2, 50, '#fa2');
+        this.gameManager.getSoundManager().stopMoveSound();
 
         if (this.lives > 0) {
             this.gameManager.schedulePlayerRespawn();
@@ -401,6 +402,13 @@ export class PlayerTank extends Tank {
         // 6. Execute Shooting
         if (wantsToShoot) {
             this.shoot();
+        }
+
+        // 7. Engine Sound Integration
+        if (isMoving && !this.isDead) {
+            this.gameManager.getSoundManager().startMoveSound();
+        } else {
+            this.gameManager.getSoundManager().stopMoveSound();
         }
     }
 }

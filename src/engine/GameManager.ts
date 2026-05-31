@@ -307,6 +307,11 @@ export class GameManager {
         this.state = newState;
         this.stateTimer = 0;
 
+        // Stop engine move sound if we are no longer actively playing
+        if (newState !== GameState.PLAYING && this.soundManager) {
+            this.soundManager.stopMoveSound();
+        }
+
         const overlay = document.getElementById('overlay');
         if (overlay) {
             if (newState === GameState.MAIN_MENU) {

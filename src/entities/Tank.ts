@@ -126,10 +126,10 @@ export abstract class Tank extends Entity {
 
         } else if (this.colorOverride) {
             mainColor = this.colorOverride;
-            // Derive dark/light from override
-            darkColor = this.colorOverride;
-            lightColor = this.colorOverride;
-            accentColor = this.colorOverride;
+            // Derive dark/light from override dynamically to preserve 3D stereoscopic rendering
+            darkColor = this.adjustColorBrightness(this.colorOverride, -25);
+            lightColor = this.adjustColorBrightness(this.colorOverride, 20);
+            accentColor = this.adjustColorBrightness(this.colorOverride, 45);
         } else {
             mainColor = '#888';
             darkColor = '#555';
@@ -358,5 +358,21 @@ export abstract class Tank extends Entity {
         }
 
         ctx.restore();
+    }
+
+    private adjustColorBrightness(hex: string, percent: number): string {
+        hex = hex.replace(/^\s*#|\s*$/g, '');
+        if (hex.length === 3) {
+            hex = hex.replace(/(.)/g, '$1$1');
+        }
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+
+        const newR = Math.min(255, Math.max(0, r + Math.round(percent * 2.55)));
+        const newG = Math.min(255, Math.max(0, g + Math.round(percent * 2.55)));
+        const newB = Math.min(255, Math.max(0, b + Math.round(percent * 2.55)));
+
+        return `#${((1 << 24) + (newR << 16) + (newG << 8) + newB).toString(16).slice(1)}`;
     }
 }
