@@ -40,8 +40,11 @@ export class PowerUpSystem {
         let radius = 0;
         let found = false;
         while (radius < 10) {
-            for (let dx = -radius; dx <= radius; dx += 2) {
-                for (let dy = -radius; dy <= radius; dy += 2) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dy = -radius; dy <= radius; dy++) {
+                    // Only check cells on the perimeter of the current search radius
+                    if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
+
                     const testX = finalX + dx * CELL_SIZE;
                     const testY = finalY + dy * CELL_SIZE;
                     if (testX >= 0 && testX <= GRID_COLS * CELL_SIZE - CELL_SIZE * 2 &&
@@ -90,10 +93,14 @@ export class PowerUpSystem {
             this.shovelTimer--;
             if (this.shovelTimer === 0) {
                 this.revertBaseReinforcement();
-            } else if (this.shovelTimer <= 180 && Math.floor(this.shovelTimer / 30) % 2 === 0) {
-                // Flash base back to brick for warning
-                this.applyBaseReinforcement(1); // 1 is brick
-            } else if (this.shovelTimer > 180) {
+            } else if (this.shovelTimer <= 180) {
+                // Flash base between brick and steel for warning
+                if (Math.floor(this.shovelTimer / 30) % 2 === 0) {
+                    this.applyBaseReinforcement(1); // 1 is brick
+                } else {
+                    this.applyBaseReinforcement(2); // 2 is steel
+                }
+            } else {
                 this.applyBaseReinforcement(2); // 2 is steel
             }
         }

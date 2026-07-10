@@ -107,11 +107,11 @@ export class CollisionSystem {
 
         // Snap slightly for corners
         if (Math.abs(dy) > 0 && dx === 0) {
-            const remainderX = tank.x % (CELL_SIZE / 2);
+            const remainderX = tank.x % CELL_SIZE;
             if (remainderX > 0 && remainderX <= 10) newDx = -Math.min(remainderX, Math.abs(dy));
             else if (remainderX > 10 && remainderX < 20) newDx = Math.min(20 - remainderX, Math.abs(dy));
         } else if (Math.abs(dx) > 0 && dy === 0) {
-            const remainderY = tank.y % (CELL_SIZE / 2);
+            const remainderY = tank.y % CELL_SIZE;
             if (remainderY > 0 && remainderY <= 10) newDy = -Math.min(remainderY, Math.abs(dx));
             else if (remainderY > 10 && remainderY < 20) newDy = Math.min(20 - remainderY, Math.abs(dx));
         }
